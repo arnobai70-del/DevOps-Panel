@@ -11,8 +11,19 @@ The full specification is in [docs/SPEC.md](docs/SPEC.md) (original: `docs/Agenc
 |---|---|---|
 | 1 | Electron + React + TypeScript skeleton, SQLite migrations, safe IPC, direct Dashboard, add project | done |
 | 2 | Project edit/archive, encrypted credentials, documents, notes & links | done |
-| 3 | Encrypted backup/restore, Windows installer | planned |
+| 3 | Encrypted backup/restore, Windows installer | done |
 | 4 | Optional LAN Team Mode (one host PC, two clients) | planned |
+
+## Install (Windows)
+
+Each pull request's CI builds the installer: open the PR's **Checks → CI → Artifacts** and download
+`AgencyProjectVault-Setup`. For a release, push a tag such as `v0.2.0`; the Release workflow attaches
+`AgencyProjectVault-Setup-<version>.exe` to a GitHub Release.
+
+The installer is not code-signed yet, so Windows SmartScreen shows "Windows protected your PC": choose
+**More info → Run anyway**. Installing per user needs no admin rights. Uninstalling keeps the vault data.
+
+See [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) for backups.
 
 ## Development
 
@@ -65,4 +76,8 @@ Uninstalling the app does not delete this folder.
   a streamed SHA-256, size-capped at 50 MB, and verified against the hash on export. Only images and plain-text types are
   previewed in the app; executable types can be exported but never launched. Deletes are soft, so files can be recovered.
 
-Not yet built: encrypted backup/restore and the installer (Step 3), LAN team mode (Step 4).
+- Backups are a single `.apv` file: scrypt (N=2^17) derives the key from the passphrase, AES-256-GCM encrypts a gzip of
+  the database snapshot, documents, vault key and a SHA-256 manifest. Restore decrypts into a staging folder,
+  verifies everything, and only then swaps it in, keeping the previous vault in `backups/pre-restore-<date>/`.
+
+Not yet built: LAN team mode (Step 4).

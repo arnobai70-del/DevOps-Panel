@@ -27,7 +27,7 @@ export function App(): React.JSX.Element {
         </nav>
       </aside>
       <main className="content">
-        {route.page === 'dashboard' && <Dashboard onOpen={(projectId) => setRoute({ page: 'project', projectId })} />}
+        {route.page === 'dashboard' && <Dashboard onOpen={(projectId) => setRoute({ page: 'project', projectId })} onSettings={() => setRoute({ page: 'settings' })} />}
         {route.page === 'project' && (
           <ProjectDetail projectId={route.projectId} onBack={() => setRoute({ page: 'dashboard' })} />
         )}

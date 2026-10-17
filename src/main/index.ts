@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { unprotectedKeys, type KeyProtector } from './services/encryption'
 import { Vault } from './services/vault'
-import { registerIpcHandlers } from './ipc/handlers'
+import { registerIpcHandlers, type VaultContext } from './ipc/handlers'
 
 // Keep data in %APPDATA%\AgencyProjectVault rather than a folder named after the display name.
 app.setPath('userData', join(app.getPath('appData'), 'AgencyProjectVault'))
@@ -74,7 +74,7 @@ if (!app.requestSingleInstanceLock()) {
   // Only one process may write the vault database at a time.
   app.quit()
 } else {
-  let vault: Vault | null = null
+  let ctx: VaultContext | null = null
 
   app.on('second-instance', () => {
     const [win] = BrowserWindow.getAllWindows()
@@ -85,18 +85,19 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(() => {
-    vault = Vault.open(app.getPath('userData'), keyProtector())
-    const opened = vault
-    opened.documents.cleanupOrphans().catch((err: unknown) => {
+    const protector = keyProtector()
+    const opened: VaultContext = { vault: Vault.open(app.getPath('userData'), protector), protector }
+    ctx = opened
+    opened.vault.documents.cleanupOrphans().catch((err: unknown) => {
       console.error('[startup] orphan cleanup failed:', err instanceof Error ? err.message : err)
     })
     registerIpcHandlers(
       opened,
       () => ({
         version: app.getVersion(),
-        dataDir: opened.dataDir,
+        dataDir: opened.vault.dataDir,
         mode: 'personal',
-        keyProtection: opened.encryptor.protection
+        keyProtection: opened.vault.encryptor.protection
       }),
       isTrustedSender
     )
@@ -111,7 +112,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on('will-quit', () => {
-    vault?.close()
-    vault = null
+    ctx?.vault.close()
+    ctx = null
   })
 }

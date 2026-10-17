@@ -47,6 +47,11 @@ const api: VaultAPI = {
     list: (projectId) => invoke('links:list', projectId),
     save: (input) => invoke('links:save', input),
     remove: (id) => invoke('links:remove', id)
+  },
+  backups: {
+    status: () => invoke('backups:status'),
+    create: (passphrase) => invoke('backups:create', passphrase),
+    restore: (passphrase) => invoke('backups:restore', passphrase)
   }
 }
 
