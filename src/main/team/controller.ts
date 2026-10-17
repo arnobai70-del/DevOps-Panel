@@ -321,7 +321,8 @@ export class TeamController {
       }
       return this.status()
     }
-    const email = google.email() ?? (await google.signIn())
+    // Always ask Google afresh here, so an earlier sign-in that did not allow Drive access is replaced.
+    const email = await google.signIn()
     const store = this.driveStore(await new DriveClient(() => google.accessToken(), this.opts.driveFetch).teamFolder())
     await store.check()
     const vault = this.opts.getVault()
