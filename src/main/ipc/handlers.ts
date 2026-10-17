@@ -153,6 +153,9 @@ export function registerIpcHandlers(
   handle('team:joinFolderTeam', (_e, input) => ctx.team.joinFolderTeam(joinFolderTeamInput.parse(input)))
   handle('team:syncNow', () => ctx.team.syncNow())
   handle('team:leaveFolder', () => ctx.team.leaveFolder())
+  handle('team:connectGoogle', () => ctx.team.connectGoogle())
+  handle('team:cancelGoogleSignIn', () => ctx.team.cancelGoogleSignIn())
+  handle('team:signOutGoogle', () => ctx.team.signOutGoogle())
 
   const localOnly = (): void => {
     if (ctx.team.client) throw new Error('Backups are made on the host PC, where the team vault is stored.')
@@ -207,7 +210,7 @@ export function registerIpcHandlers(
   handle('backups:restore', (event, passphrase) =>
     exclusive(async (): Promise<RestoreResult | null> => {
       localOnly()
-      if (ctx.team.role === 'folder') {
+      if (ctx.team.role === 'folder' || ctx.team.role === 'google') {
         throw new Error('This PC syncs with a team folder. Stop folder sync before restoring, or the restore would mix with the team data.')
       }
       const secret = passphraseArg(passphrase)

@@ -1,9 +1,9 @@
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { readFile, unlink } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { Db } from '../db/database'
-import { teamDir } from './teamFolder'
+import { atomicWrite, FolderStore, type SyncStore } from './store'
 
 /**
  * Serverless team sync through a shared folder (Google Drive, OneDrive, Dropbox, a network share).
@@ -23,7 +23,7 @@ type Table = (typeof SYNCED_TABLES)[number]
 const CHILD_TABLES: Table[] = ['credentials', 'documents', 'notes', 'links']
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-const DEVICE_FILE = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.rec$/
+const RECORD_PATH = /^records\/([a-z]+)\/([0-9a-f-]{36})\/([0-9a-f-]{36})\.rec$/
 const STORAGE_KEY = /^[0-9a-f]{2}\/[0-9a-f-]{36}\.bin$/
 const DELETED = 'deleted'
 
@@ -51,7 +51,9 @@ export interface SyncResult {
 }
 
 export interface FolderSyncOptions {
-  folder: string
+  /** A team folder on disk, or any other store (e.g. the app's folder in Google Drive). */
+  folder?: string
+  store?: SyncStore
   teamKey: Buffer
   deviceId: string
   db: () => Db
@@ -76,15 +78,15 @@ export class FolderSync {
   private readonly seen = new Map<string, string>()
   private clock = 0
   private running: Promise<SyncResult> | null = null
+  private readonly store: SyncStore
 
   constructor(private readonly opts: FolderSyncOptions) {
+    const store = opts.store ?? (opts.folder ? new FolderStore(opts.folder) : null)
+    if (!store) throw new Error('No sync store')
+    this.store = store
     const derive = (info: string): Buffer => Buffer.from(hkdfSync('sha256', opts.teamKey, 'agency-project-vault', info, 32))
     this.recordKey = derive('sync-records-v1')
     this.fileKey = derive('sync-files-v1')
-  }
-
-  private get root(): string {
-    return teamDir(this.opts.folder)
   }
 
   /** Runs one round; concurrent callers share the round in progress. */
@@ -98,9 +100,7 @@ export class FolderSync {
   }
 
   private async round(): Promise<SyncResult> {
-    if (!existsSync(join(this.root, 'team.json'))) {
-      throw new Error('The team folder is not available. Check that Google Drive / OneDrive is running and the folder still exists.')
-    }
+    await this.store.check()
     const db = this.opts.db()
     this.clock = Math.max(this.clock, this.maxStamp(db))
     const exported = await this.exportChanges(db)
@@ -167,19 +167,18 @@ export class FolderSync {
   }
 
   private async writeRecord(record: SyncRecord): Promise<void> {
-    const path = join(this.root, 'records', record.table, record.id, `${record.device}.rec`)
-    await this.atomicWrite(path, this.seal(this.recordKey, Buffer.from(JSON.stringify({ ...record, row: record.row && JSON.parse(canonical(record.row)) })), `${record.table}:${record.id}`))
-    const info = await stat(path)
-    this.seen.set(path, `${info.mtimeMs}:${info.size}`)
+    const path = `records/${record.table}/${record.id}/${record.device}.rec`
+    const sealed = this.seal(this.recordKey, Buffer.from(JSON.stringify({ ...record, row: record.row && JSON.parse(canonical(record.row)) })), `${record.table}:${record.id}`)
+    this.seen.set(path, await this.store.write(path, sealed))
   }
 
   private async uploadFile(storageKey: string): Promise<void> {
     if (!STORAGE_KEY.test(storageKey)) return
-    const target = join(this.root, 'files', basename(storageKey))
-    if (existsSync(target)) return
+    const target = `files/${storageKey.slice(3)}`
+    if (await this.store.has(target)) return
     const local = join(this.opts.filesDir(), storageKey)
     if (!existsSync(local)) return
-    await this.atomicWrite(target, this.seal(this.fileKey, await readFile(local), `file:${storageKey}`))
+    await this.store.write(target, this.seal(this.fileKey, await readFile(local), `file:${storageKey}`))
   }
 
   // ---- import: folder -> local ----
@@ -187,31 +186,30 @@ export class FolderSync {
   private async importChanges(db: Db): Promise<{ imported: number; pending: number }> {
     let imported = 0
     let pending = 0
+    const listing = await this.store.list('records/')
+    const byTable = new Map<string, { path: string; id: string; device: string; signature: string }[]>()
+    for (const [path, signature] of listing) {
+      const m = path.match(RECORD_PATH)
+      if (!m || !ID.test(m[2]) || !ID.test(m[3]) || m[3] === this.opts.deviceId) continue
+      if (this.seen.get(path) === signature) continue
+      const list = byTable.get(m[1]) ?? []
+      list.push({ path, id: m[2], device: m[3], signature })
+      byTable.set(m[1], list)
+    }
     for (const table of SYNCED_TABLES) {
-      const tableDir = join(this.root, 'records', table)
-      for (const id of (await readdir(tableDir).catch(() => [] as string[])).sort()) {
-        if (!ID.test(id)) continue
-        for (const name of await readdir(join(tableDir, id)).catch(() => [] as string[])) {
-          const device = name.match(DEVICE_FILE)?.[1]
-          if (!device || device === this.opts.deviceId) continue
-          const path = join(tableDir, id, name)
-          const info = await stat(path).catch(() => null)
-          if (!info) continue
-          const signature = `${info.mtimeMs}:${info.size}`
-          if (this.seen.get(path) === signature) continue
-          const record = await this.readRecord(path, table, id, device)
-          if (!record) {
-            this.seen.set(path, signature)
-            continue
-          }
-          const outcome = await this.apply(db, record)
-          if (outcome === 'pending') {
-            pending++
-            continue // try again next round
-          }
+      for (const { path, id, device, signature } of (byTable.get(table) ?? []).sort((a, b) => a.id.localeCompare(b.id))) {
+        const record = await this.readRecord(path, table, id, device)
+        if (!record) {
           this.seen.set(path, signature)
-          if (outcome === 'applied') imported++
+          continue
         }
+        const outcome = await this.apply(db, record)
+        if (outcome === 'pending') {
+          pending++
+          continue // try again next round
+        }
+        this.seen.set(path, signature)
+        if (outcome === 'applied') imported++
       }
     }
     return { imported, pending }
@@ -219,7 +217,9 @@ export class FolderSync {
 
   private async readRecord(path: string, table: Table, id: string, device: string): Promise<SyncRecord | null> {
     try {
-      const record = JSON.parse(this.open(this.recordKey, await readFile(path), `${table}:${id}`).toString('utf8')) as SyncRecord
+      const blob = await this.store.read(path)
+      if (!blob) return null
+      const record = JSON.parse(this.open(this.recordKey, blob, `${table}:${id}`).toString('utf8')) as SyncRecord
       if (record.v !== 1 || record.table !== table || record.id !== id || record.device !== device || typeof record.stamp !== 'number') {
         return null
       }
@@ -294,16 +294,16 @@ export class FolderSync {
     if (!STORAGE_KEY.test(storageKey)) return false
     const local = join(this.opts.filesDir(), storageKey)
     if (existsSync(local)) return true
-    const source = join(this.root, 'files', basename(storageKey))
-    if (!existsSync(source)) return false
+    const blob = await this.store.read(`files/${storageKey.slice(3)}`)
+    if (!blob) return false
     let data: Buffer
     try {
-      data = this.open(this.fileKey, await readFile(source), `file:${storageKey}`)
+      data = this.open(this.fileKey, blob, `file:${storageKey}`)
     } catch {
       return false
     }
     if (createHash('sha256').update(data).digest('hex') !== row.sha256) return false
-    await this.atomicWrite(local, data)
+    await atomicWrite(local, data)
     return true
   }
 
@@ -323,25 +323,5 @@ export class FolderSync {
     decipher.setAAD(Buffer.from(aad))
     decipher.setAuthTag(blob.subarray(17, 33))
     return Buffer.concat([decipher.update(blob.subarray(33)), decipher.final()])
-  }
-
-  private async atomicWrite(path: string, data: Buffer): Promise<void> {
-    await mkdir(dirname(path), { recursive: true })
-    const tmp = join(dirname(path), `.${basename(path)}.${randomBytes(4).toString('hex')}.tmp`)
-    await writeFile(tmp, data)
-    // On Windows a cloud client may hold the old file open for a moment while it uploads it.
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await rename(tmp, path)
-        return
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException).code
-        if (attempt >= 4 || (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES')) {
-          await unlink(tmp).catch(() => undefined)
-          throw err
-        }
-        await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)))
-      }
-    }
   }
 }

@@ -71,7 +71,10 @@ const api: VaultAPI = {
     createFolderTeam: (input) => invoke('team:createFolderTeam', input),
     joinFolderTeam: (input) => invoke('team:joinFolderTeam', input),
     syncNow: () => invoke('team:syncNow'),
-    leaveFolder: () => invoke('team:leaveFolder')
+    leaveFolder: () => invoke('team:leaveFolder'),
+    connectGoogle: () => invoke('team:connectGoogle'),
+    cancelGoogleSignIn: () => invoke('team:cancelGoogleSignIn'),
+    signOutGoogle: () => invoke('team:signOutGoogle')
   },
   backups: {
     status: () => invoke('backups:status'),

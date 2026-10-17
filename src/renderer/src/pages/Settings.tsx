@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import type { AppInfo, BackupCounts, BackupStatus } from '../../../shared/types'
+import type { AppInfo, BackupCounts, BackupStatus, TeamStatus } from '../../../shared/types'
+import { AccountPanel } from '../components/GoogleSync'
 import { Modal } from '../components/Modal'
 import { TeamPanel } from '../components/TeamPanel'
 import { errorText, formatBytes } from '../lib'
@@ -13,6 +14,9 @@ export function Settings(): React.JSX.Element {
   const [message, setMessage] = useState<string | null>(null)
 
   const loadStatus = useCallback(async () => setStatus(await window.vault.backups.status()), [])
+  const [team, setTeam] = useState<TeamStatus | null>(null)
+  const loadTeam = useCallback(() => void window.vault.team.status().then(setTeam), [])
+  useEffect(loadTeam, [loadTeam])
 
   useEffect(() => {
     void window.vault.app.info().then((appInfo) => {
@@ -55,7 +59,11 @@ export function Settings(): React.JSX.Element {
           </div>
         </section>
       )}
-      <TeamPanel onRoleChange={() => void window.vault.app.info().then(setInfo)} />
+      {team && (team.role === 'personal' || team.role === 'google') && <AccountPanel status={team} onChange={loadTeam} />}
+      {/* Office-network and shared-folder teams set up with earlier versions keep their controls. */}
+      {team && team.role !== 'personal' && team.role !== 'google' && (
+        <TeamPanel onRoleChange={() => void window.vault.app.info().then(setInfo)} />
+      )}
       <section className="panel">
         <h2>Storage</h2>
         <dl className="facts">
@@ -65,7 +73,9 @@ export function Settings(): React.JSX.Element {
               ? '…'
               : info.mode === 'client'
                 ? 'Team vault (data is stored on the host PC)'
-                : info.mode === 'folder'
+                : info.mode === 'google'
+                  ? 'Synced through Google Drive (a full copy on this PC)'
+                  : info.mode === 'folder'
                   ? 'Team folder sync (a full copy on this PC, synced through a shared folder)'
                   : info.mode === 'host'
                     ? 'Team host (data stays on this PC and is shared on the office network)'

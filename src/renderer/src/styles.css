@@ -163,3 +163,18 @@ label.check input { width: auto; }
 .team-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
 .facts + .actions { margin-top: 12px; }
 button.primary.danger-fill { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+.welcome { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.welcome-box { max-width: 460px; text-align: center; display: grid; gap: 16px; justify-items: center; }
+.welcome-box h1 { margin: 0; font-size: 26px; }
+.welcome-box p { margin: 0; }
+button.link { border: 0; background: transparent; color: var(--muted); text-decoration: underline; padding: 4px; }
+.sidebar { display: flex; flex-direction: column; }
+.sync-badge {
+  margin-top: auto; display: flex; gap: 10px; align-items: center; text-align: left; border: 0; background: transparent;
+  padding: 10px; font-size: 13px;
+}
+.sync-badge small { display: block; color: var(--muted); font-size: 12px; word-break: break-all; }
+.sync-badge .dot { width: 9px; height: 9px; border-radius: 50%; background: #16a34a; flex: 0 0 auto; }
+.sync-badge.busy .dot { background: #d97706; }
+.sync-badge.error .dot { background: var(--danger); }

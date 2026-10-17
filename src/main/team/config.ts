@@ -24,6 +24,14 @@ export type TeamConfig =
       /** Random id of this PC, written into every record it syncs. */
       deviceId: string
     }
+  | {
+      role: 'google'
+      /** The Google account whose Drive holds the team's data. */
+      email: string
+      folderId: string
+      teamId: string
+      deviceId: string
+    }
 
 const configSchema = z.discriminatedUnion('role', [
   z.object({ role: z.literal('personal') }),
@@ -44,6 +52,13 @@ const configSchema = z.discriminatedUnion('role', [
     folder: z.string().min(1),
     teamId: z.string().uuid(),
     teamName: z.string(),
+    deviceId: z.string().min(1)
+  }),
+  z.object({
+    role: z.literal('google'),
+    email: z.string(),
+    folderId: z.string().min(1),
+    teamId: z.string().uuid(),
     deviceId: z.string().min(1)
   })
 ])

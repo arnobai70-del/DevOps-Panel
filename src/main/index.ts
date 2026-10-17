@@ -6,6 +6,8 @@ import { unprotectedKeys, type KeyProtector } from './services/encryption'
 import { Vault } from './services/vault'
 import { registerIpcHandlers, type VaultContext } from './ipc/handlers'
 import { TeamController } from './team/controller'
+import { GoogleAuth } from './google/auth'
+import { GOOGLE_CLIENT } from './google/client'
 
 // Keep data in %APPDATA%\AgencyProjectVault rather than a folder named after the display name.
 app.setPath('userData', join(app.getPath('appData'), 'AgencyProjectVault'))
@@ -98,6 +100,7 @@ if (!app.requestSingleInstanceLock()) {
         protector,
         getVault: () => opened.vault,
         hostName: hostname(),
+        google: new GoogleAuth({ dataDir, protector, client: GOOGLE_CLIENT, openExternal: (url) => shell.openExternal(url) }),
         reopenVault: () => {
           opened.vault.close()
           opened.vault = Vault.open(dataDir, protector)

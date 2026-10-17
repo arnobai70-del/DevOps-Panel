@@ -170,6 +170,15 @@ export type TeamStatus =
       pending: number
     }
   | {
+      role: 'google'
+      /** The Google account whose Drive holds the team's data. */
+      email: string
+      lastSyncAt: string | null
+      /** Why the last sync failed (offline, signed out…). */
+      error: string | null
+      pending: number
+    }
+  | {
       role: 'client'
       hostName: string
       address: string
@@ -183,7 +192,7 @@ export type TeamStatus =
 export interface AppInfo {
   version: string
   dataDir: string
-  mode: 'personal' | 'host' | 'client' | 'folder'
+  mode: 'personal' | 'host' | 'client' | 'folder' | 'google'
   keyProtection: 'safeStorage' | 'none'
 }
 
@@ -256,6 +265,10 @@ export interface VaultAPI {
     joinFolderTeam(input: { folder?: string; passphrase: string }): Promise<TeamStatus>
     syncNow(): Promise<TeamStatus>
     leaveFolder(): Promise<TeamStatus>
+    /** Opens Google sign-in in the browser, then syncs through that account's Drive. */
+    connectGoogle(): Promise<TeamStatus>
+    cancelGoogleSignIn(): Promise<void>
+    signOutGoogle(): Promise<TeamStatus>
   }
   backups: {
     status(): Promise<BackupStatus>
