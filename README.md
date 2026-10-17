@@ -12,7 +12,7 @@ The full specification is in [docs/SPEC.md](docs/SPEC.md) (original: `docs/Agenc
 | 1 | Electron + React + TypeScript skeleton, SQLite migrations, safe IPC, direct Dashboard, add project | done |
 | 2 | Project edit/archive, encrypted credentials, documents, notes & links | done |
 | 3 | Encrypted backup/restore, Windows installer | done |
-| 4 | Optional LAN Team Mode (one host PC, two clients) | planned |
+| 4 | Optional LAN Team Mode (one host PC, two clients) | done |
 
 ## Install (Windows)
 
@@ -23,7 +23,8 @@ Each pull request's CI builds the installer: open the PR's **Checks → CI → A
 The installer is not code-signed yet, so Windows SmartScreen shows "Windows protected your PC": choose
 **More info → Run anyway**. Installing per user needs no admin rights. Uninstalling keeps the vault data.
 
-See [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) for backups.
+See [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) for backups and [docs/TEAM_MODE.md](docs/TEAM_MODE.md) for sharing
+one vault between PCs on the office network.
 
 ## Development
 
@@ -45,7 +46,8 @@ src/
   main/             Electron main process: owns SQLite, files and all secrets
     index.ts        app lifecycle, hardened BrowserWindow
     preload.ts      the only bridge: a narrow, typed window.vault API
-    ipc/            IPC handlers (sender check + zod validation)
+    ipc/            IPC handlers (sender check + zod validation) and the shared vault method table
+    team/           LAN Team Mode: HTTPS host, pairing, pinned client, role config
     services/       projects, credentials, encryption, documents, notes/links, Vault
     db/             database open + versioned migrations
   renderer/         React UI (no Node, no fs, sandboxed)
@@ -56,7 +58,8 @@ docs/               specification
 
 ## Data location
 
-`%APPDATA%\AgencyProjectVault\` holds `vault.sqlite`, `vault.key`, `files/`, `backups/` and `logs/`.
+`%APPDATA%\AgencyProjectVault\` holds `vault.sqlite`, `vault.key`, `files/`, `backups/`, `logs/` and `team/`
+(Team Mode role, host certificate, joined-PC token).
 Documents are stored as `files/<xx>/<uuid>.bin`; the original filename is kept only in the database.
 Uninstalling the app does not delete this folder.
 
@@ -79,5 +82,7 @@ Uninstalling the app does not delete this folder.
 - Backups are a single `.apv` file: scrypt (N=2^17) derives the key from the passphrase, AES-256-GCM encrypts a gzip of
   the database snapshot, documents, vault key and a SHA-256 manifest. Restore decrypts into a staging folder,
   verifies everything, and only then swaps it in, keeping the previous vault in `backups/pre-restore-<date>/`.
-
-Not yet built: LAN team mode (Step 4).
+- Team Mode (optional) serves the host's vault over HTTPS on the LAN only, with a pinned self-signed certificate,
+  code-proven pairing (HMAC over the certificate fingerprint), approval on the host, and revocable per-device tokens.
+  Joined PCs run the same validated vault operations remotely and never open the host's database file. See
+  [docs/TEAM_MODE.md](docs/TEAM_MODE.md).

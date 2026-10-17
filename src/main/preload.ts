@@ -48,6 +48,18 @@ const api: VaultAPI = {
     save: (input) => invoke('links:save', input),
     remove: (id) => invoke('links:remove', id)
   },
+  team: {
+    status: () => invoke('team:status'),
+    enableHost: () => invoke('team:enableHost'),
+    disableHost: () => invoke('team:disableHost'),
+    newCode: () => invoke('team:newCode'),
+    approve: (requestId) => invoke('team:approve', requestId),
+    deny: (requestId) => invoke('team:deny', requestId),
+    revoke: (deviceId) => invoke('team:revoke', deviceId),
+    join: (input) => invoke('team:join', input),
+    joinStatus: (requestId) => invoke('team:joinStatus', requestId),
+    leave: () => invoke('team:leave')
+  },
   backups: {
     status: () => invoke('backups:status'),
     create: (passphrase) => invoke('backups:create', passphrase),

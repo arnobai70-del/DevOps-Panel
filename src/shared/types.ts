@@ -125,10 +125,49 @@ export interface RestoreResult {
   safetyCopyDir: string
 }
 
+export interface TeamDevice {
+  id: string
+  name: string
+  address: string | null
+  createdAt: string
+  lastSeenAt: string | null
+}
+
+export interface TeamPendingRequest {
+  id: string
+  deviceName: string
+  address: string | null
+  requestedAt: string
+}
+
+export type TeamStatus =
+  | { role: 'personal' }
+  | {
+      role: 'host'
+      running: boolean
+      error: string | null
+      port: number
+      addresses: string[]
+      fingerprint: string
+      code: { code: string; expiresAt: string } | null
+      pending: TeamPendingRequest[]
+      devices: TeamDevice[]
+    }
+  | {
+      role: 'client'
+      hostName: string
+      address: string
+      port: number
+      fingerprint: string
+      online: boolean
+      /** Why the team vault cannot be used right now (offline, removed on the host, certificate changed). */
+      error: string | null
+    }
+
 export interface AppInfo {
   version: string
   dataDir: string
-  mode: 'personal'
+  mode: 'personal' | 'host' | 'client'
   keyProtection: 'safeStorage' | 'none'
 }
 
@@ -177,6 +216,20 @@ export interface VaultAPI {
     list(projectId: string): Promise<Link[]>
     save(input: LinkSave): Promise<Link>
     remove(id: string): Promise<void>
+  }
+  team: {
+    status(): Promise<TeamStatus>
+    enableHost(): Promise<TeamStatus>
+    disableHost(): Promise<TeamStatus>
+    newCode(): Promise<TeamStatus>
+    approve(requestId: string): Promise<TeamStatus>
+    deny(requestId: string): Promise<TeamStatus>
+    revoke(deviceId: string): Promise<TeamStatus>
+    /** Contacts the host and sends a pairing request; returns the request id to poll. */
+    join(input: { address: string; code: string; deviceName: string }): Promise<{ requestId: string; hostName: string; fingerprint: string }>
+    /** Polls the host; on approval the app switches to the team vault. */
+    joinStatus(requestId: string): Promise<'pending' | 'approved' | 'denied' | 'expired'>
+    leave(): Promise<TeamStatus>
   }
   backups: {
     status(): Promise<BackupStatus>

@@ -77,8 +77,16 @@ const EXECUTABLE = new Set([
   '.sh', '.html', '.htm', '.svg', '.xhtml', '.chm', '.dll', '.sys', '.iso', '.img', '.vhd', '.vhdx', '.msc'
 ])
 
+/** True for file types that must never be launched from the vault (exporting them is fine). */
+export function isExecutableName(filename: string): boolean {
+  return EXECUTABLE.has(extname(filename).toLowerCase())
+}
+
 export class DocumentService {
-  private readonly picks = new Map<string, { path: string; filename: string; size: number; expires: number }>()
+  private readonly picks = new Map<
+    string,
+    { path: string; filename: string; size: number; expires: number; deleteAfterUse: boolean }
+  >()
 
   constructor(
     private readonly db: Db,
@@ -92,15 +100,25 @@ export class DocumentService {
    * Remembers a file the user chose in the native picker and hands back an opaque token.
    * The renderer can only refer to files through these tokens, never by path.
    */
-  async registerPick(path: string): Promise<PickedFile> {
+  async registerPick(path: string, opts: { filename?: string; deleteAfterUse?: boolean } = {}): Promise<PickedFile> {
     const info = await stat(path)
     if (!info.isFile()) throw new Error('Please choose a regular file.')
     this.checkSize(info.size)
     const token = randomUUID()
     const now = Date.now()
-    for (const [key, pick] of this.picks) if (pick.expires < now) this.picks.delete(key)
-    const filename = basename(path)
-    this.picks.set(token, { path, filename, size: info.size, expires: now + PICK_TTL_MS })
+    for (const [key, pick] of this.picks) {
+      if (pick.expires >= now) continue
+      this.picks.delete(key)
+      if (pick.deleteAfterUse) await unlink(pick.path).catch(() => undefined)
+    }
+    const filename = opts.filename ? safeFilename(opts.filename) : basename(path)
+    this.picks.set(token, {
+      path,
+      filename,
+      size: info.size,
+      expires: now + PICK_TTL_MS,
+      deleteAfterUse: opts.deleteAfterUse ?? false
+    })
     return { token, filename, size: info.size }
   }
 
@@ -119,7 +137,7 @@ export class DocumentService {
     const { projectId, fileToken, metadata } = documentCreateSchema.parse(raw)
     this.projects.require(projectId)
     const pick = this.takePick(fileToken)
-    const stored = await this.store(pick.path)
+    const stored = await this.storePick(pick)
     const id = randomUUID()
     const timestamp = this.now()
     try {
@@ -155,7 +173,7 @@ export class DocumentService {
     const existing = this.row(id)
     if (!existing) throw new NotFoundError('document')
     const pick = fileToken ? this.takePick(fileToken) : null
-    const stored = pick ? await this.store(pick.path) : null
+    const stored = pick ? await this.storePick(pick) : null
     try {
       const result = this.db
         .prepare(
@@ -229,9 +247,8 @@ export class DocumentService {
   /** Copies the file into tempDir under its original name so the OS can open it; refuses executable types. */
   async prepareOpen(id: string, tempDir: string): Promise<string> {
     const row = this.requireRow(id)
-    const ext = extname(row.original_filename).toLowerCase()
-    if (EXECUTABLE.has(ext)) {
-      throw new Error(`For safety, ${ext} files are not opened from the vault. Use Export instead.`)
+    if (isExecutableName(row.original_filename)) {
+      throw new Error(executableRefusal(row.original_filename))
     }
     const dir = join(tempDir, randomUUID())
     await mkdir(dir, { recursive: true })
@@ -266,7 +283,21 @@ export class DocumentService {
     }
   }
 
-  private takePick(token: string): { path: string; filename: string } {
+  /** Opens the stored file for streaming, e.g. to a team client. */
+  openRead(id: string): { summary: DocumentSummary; stream: NodeJS.ReadableStream } {
+    const row = this.requireRow(id)
+    return { summary: toSummary(row), stream: createReadStream(this.pathOf(row.storage_key)) }
+  }
+
+  private async storePick(pick: { path: string; deleteAfterUse: boolean }): Promise<StoredFile> {
+    try {
+      return await this.store(pick.path)
+    } finally {
+      if (pick.deleteAfterUse) await unlink(pick.path).catch(() => undefined)
+    }
+  }
+
+  private takePick(token: string): { path: string; filename: string; deleteAfterUse: boolean } {
     const pick = this.picks.get(token)
     this.picks.delete(token)
     if (!pick || pick.expires < Date.now()) throw new Error('The chosen file has expired. Please choose it again.')
@@ -347,6 +378,10 @@ function toSummary(row: DocumentRow): DocumentSummary {
 
 function mimeOf(filename: string): string | null {
   return MIME[extname(filename).toLowerCase()] ?? null
+}
+
+export function executableRefusal(filename: string): string {
+  return `For safety, ${extname(filename).toLowerCase()} files are not opened from the vault. Use Export instead.`
 }
 
 export function safeFilename(name: string): string {

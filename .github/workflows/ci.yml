@@ -21,6 +21,11 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # The app runs on Electron's Node and BoringSSL, not the system Node: run the suite there too.
+      - name: Tests on Electron's runtime
+        run: npx electron node_modules/vitest/vitest.mjs run
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
       - run: npm run build
 
   installer:
