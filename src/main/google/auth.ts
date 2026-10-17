@@ -12,7 +12,8 @@ import type { KeyProtector } from '../services/encryption'
  */
 
 /** Files this app creates in the user's Drive, and the account's email. Nothing else in Drive is visible. */
-export const GOOGLE_SCOPES = ['openid', 'email', 'https://www.googleapis.com/auth/drive.file']
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+export const GOOGLE_SCOPES = ['openid', 'email', DRIVE_SCOPE]
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000
@@ -38,7 +39,8 @@ const tokenSchema = z.object({
   access_token: z.string(),
   expires_in: z.number(),
   refresh_token: z.string().optional(),
-  id_token: z.string().optional()
+  id_token: z.string().optional(),
+  scope: z.string().optional()
 })
 
 const base64url = (b: Buffer): string => b.toString('base64url')
@@ -125,6 +127,12 @@ export class GoogleAuth implements GoogleAccount {
       client_secret: clientSecret
     })
     if (!tokens.refresh_token) throw new Error('Google did not allow offline access. Please try signing in again.')
+    // Google lets people untick individual permissions; without Drive the app cannot sync anything.
+    if (tokens.scope !== undefined && !tokens.scope.split(' ').includes(DRIVE_SCOPE)) {
+      throw new Error(
+        'Google Drive access was not allowed. Sign in again and tick the box that lets Agency Project Vault use its files in Google Drive.'
+      )
+    }
     const email = tokens.id_token ? emailFromIdToken(tokens.id_token) : null
     if (!email) throw new Error('Google did not share the account email. Please try signing in again.')
     this.remember(tokens)

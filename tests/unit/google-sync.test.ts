@@ -255,8 +255,10 @@ describe('team sync through Google Drive with only a Google sign-in', () => {
 describe('Google sign-in', () => {
   const idToken = (email: string): string => `x.${Buffer.from(JSON.stringify({ email })).toString('base64url')}.sig`
 
-  function tokenServer(): { fetch: typeof fetch; forms: URLSearchParams[]; revoked: boolean } {
-    const state = { fetch: null as unknown as typeof fetch, forms: [] as URLSearchParams[], revoked: false }
+  const ALL_SCOPES = 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.file'
+
+  function tokenServer(): { fetch: typeof fetch; forms: URLSearchParams[]; revoked: boolean; scope: string } {
+    const state = { fetch: null as unknown as typeof fetch, forms: [] as URLSearchParams[], revoked: false, scope: ALL_SCOPES }
     state.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       if (String(input) !== 'https://oauth2.googleapis.com/token') return new Response('nope', { status: 404 })
       const form = new URLSearchParams(String(init?.body))
@@ -265,7 +267,7 @@ describe('Google sign-in', () => {
         if (state.revoked || form.get('refresh_token') !== 'refresh-1') return new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 })
         return new Response(JSON.stringify({ access_token: 'access-2', expires_in: 3600 }))
       }
-      return new Response(JSON.stringify({ access_token: 'access-1', expires_in: 3600, refresh_token: 'refresh-1', id_token: idToken('agency@gmail.com') }))
+      return new Response(JSON.stringify({ access_token: 'access-1', expires_in: 3600, refresh_token: 'refresh-1', id_token: idToken('agency@gmail.com'), scope: state.scope }))
     }) as typeof fetch
     return state
   }
@@ -309,6 +311,27 @@ describe('Google sign-in', () => {
     await expect(auth.accessToken()).rejects.toBeInstanceOf(SignedOutError)
     auth.signOut()
     expect(existsSync(join(dir, 'google', 'account.json'))).toBe(false)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('refuses a sign-in where the Drive permission box was left unticked', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'apv-auth-'))
+    const google = tokenServer()
+    google.scope = 'openid https://www.googleapis.com/auth/userinfo.email'
+    const auth = new GoogleAuth({
+      dataDir: dir,
+      protector: unprotectedKeys,
+      client: { clientId: 'client-1', clientSecret: 'secret-1' },
+      fetch: google.fetch,
+      openExternal: async (url) => {
+        const u = new URL(url)
+        await fetch(`${u.searchParams.get('redirect_uri')}/?code=auth-code&state=${u.searchParams.get('state')}`)
+      }
+    })
+    await expect(auth.signIn()).rejects.toThrow(/tick the box/)
+    expect(auth.email()).toBeNull()
+    google.scope = ALL_SCOPES
+    expect(await auth.signIn()).toBe('agency@gmail.com')
     rmSync(dir, { recursive: true, force: true })
   })
 
