@@ -16,9 +16,10 @@ The full specification is in [docs/SPEC.md](docs/SPEC.md) (original: `docs/Agenc
 
 ## Install (Windows)
 
-Each pull request's CI builds the installer: open the PR's **Checks → CI → Artifacts** and download
-`AgencyProjectVault-Setup`. For a release, push a tag such as `v0.2.0`; the Release workflow attaches
-`AgencyProjectVault-Setup-<version>.exe` to a GitHub Release.
+Download `AgencyProjectVault-Setup-<version>.exe` from the repository's
+[Releases](https://github.com/arnobai70-del/DevOps-Panel/releases) page and run it. A release is published
+automatically whenever `main` carries a `version` in `package.json` that has no release yet, so bump the version to
+publish the next one. Each pull request's CI also builds the installer under **Checks → CI → Artifacts**.
 
 The installer is not code-signed yet, so Windows SmartScreen shows "Windows protected your PC": choose
 **More info → Run anyway**. Installing per user needs no admin rights. Uninstalling keeps the vault data.
