@@ -6,7 +6,7 @@
 2. App-এ **Settings → Team Sharing → Create team folder…** চাপুন। ওই ফোল্ডারটা বেছে নিন, একটা team name দিন আর একটা team passphrase দিন (কমপক্ষে ১০ অক্ষর)।
 3. Google Drive-এ ওই ফোল্ডারটা টিমের বাকিদের সাথে **Share** করুন (Editor হিসেবে)।
 4. বাকিদের PC-তে Google Drive for desktop থাকতে হবে, আর শেয়ার করা ফোল্ডারটা তাদের Drive-এ দেখা যেতে হবে। "Shared with me" থেকে **Add shortcut to Drive** দিন।
-5. তাদের app-এ **Settings → Team Sharing → Join team folder…** চাপবেন, একই ফোল্ডার বেছে নেবেন আর একই passphrase দেবেন।
+5. তাদের app-এ **Settings → Team Sharing → Join team folder…** চাপবেন আর শুধু passphrase দেবেন। ফোল্ডার বাছতে হবে না: app নিজেই Google Drive (G:\My Drive, Shared drives), OneDrive বা Dropbox-এর ভেতরে team ফোল্ডারটা খুঁজে নেয়। না পেলে তখন হাতে ফোল্ডার বাছার অপশন আসে।
 
 এরপর সবাই একই project, credential, document, note আর link দেখবে ও ব্যবহার করতে পারবে। কোনো PC চালু রাখতে হয় না। সার্ভার, domain বা VPS লাগে না। Drive-এ সবকিছু encrypted অবস্থায় থাকে।
 

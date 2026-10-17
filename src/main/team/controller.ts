@@ -6,7 +6,7 @@ import { Encryptor, type KeyProtector } from '../services/encryption'
 import type { Vault } from '../services/vault'
 import { FolderSync } from '../sync/folderSync'
 import { rekeyCredentials } from '../sync/rekey'
-import { createTeam, hasTeam, openTeam, peekTeam } from '../sync/teamFolder'
+import { createTeam, findTeamFolders, hasTeam, openTeam, peekTeam, type TeamInfo } from '../sync/teamFolder'
 import { hello, pairStart, pairStatus, TeamClient, type PinnedHost } from './client'
 import { readTeamConfig, writeTeamConfig } from './config'
 import { TeamHost } from './host'
@@ -20,7 +20,9 @@ const SYNC_AFTER_CHANGE_MS = 1_500
 
 interface FolderState {
   folder: string
+  teamId: string
   teamName: string
+  deviceId: string
   sync: FolderSync
   lastSyncAt: string | null
   error: string | null
@@ -55,6 +57,8 @@ export class TeamController {
       /** Called after a sync brought in changes from other PCs. */
       onRemoteChange?: () => void
       syncIntervalMs?: number
+      /** Where to look for team folders; defaults to the usual Google Drive / OneDrive / Dropbox places. */
+      searchRoots?: string[]
     }
   ) {}
 
@@ -71,7 +75,7 @@ export class TeamController {
     if (config.role === 'host') {
       await this.startHost()
     } else if (config.role === 'folder') {
-      this.startFolder(config.folder, config.teamName, config.deviceId)
+      this.startFolder(config.folder, config.teamId, config.teamName, config.deviceId)
       if (peekTeam(config.folder)?.teamId !== config.teamId && existsSync(config.folder)) {
         this.folderState!.error = 'The team folder now holds a different team. Leave and join again.'
         this.stopTimers()
@@ -224,10 +228,17 @@ export class TeamController {
    * Joins the team in folder. This PC adopts the team key (its own credentials are re-encrypted
    * with it, and the old key file is kept as vault.key.before-team), then its data merges in.
    */
-  async joinFolderTeam(input: { folder: string; passphrase: string }): Promise<TeamStatus> {
+  async joinFolderTeam(input: { folder?: string; passphrase: string }): Promise<TeamStatus> {
     this.refuseIfOtherRole()
-    if (!hasTeam(input.folder)) throw new Error('No team vault found in this folder. Pick the folder the team was created in.')
-    const team = await openTeam(input.folder, input.passphrase)
+    let folder: string
+    let team: TeamInfo
+    if (input.folder) {
+      if (!hasTeam(input.folder)) throw new Error('No team vault found in this folder. Pick the folder the team was created in.')
+      folder = input.folder
+      team = await openTeam(folder, input.passphrase)
+    } else {
+      ;({ folder, team } = await this.findTeam(input.passphrase))
+    }
     const vault = this.opts.getVault()
     if (!vault.encryptor.exportKey().equals(team.key) || vault.encryptor.keyVersion !== team.keyVersion) {
       const keyFile = join(this.opts.dataDir, 'vault.key')
@@ -237,7 +248,29 @@ export class TeamController {
       if (!this.opts.reopenVault) throw new Error('Cannot switch the vault key here')
       this.opts.reopenVault()
     }
-    return this.enterFolder(input.folder, team.teamId, team.teamName)
+    return this.enterFolder(folder, team.teamId, team.teamName)
+  }
+
+  /** Finds the team folder on this PC (Google Drive, OneDrive, Dropbox) that the passphrase opens. */
+  private async findTeam(passphrase: string): Promise<{ folder: string; team: TeamInfo }> {
+    const folders = await findTeamFolders(this.opts.searchRoots)
+    if (folders.length === 0) {
+      throw new Error(
+        'No team folder found on this PC. Install Google Drive for desktop, sign in, and add the shared team folder to My Drive (in Drive: right-click the folder → Organize → Add shortcut). Then try again.'
+      )
+    }
+    const tried = new Set<string>()
+    for (const folder of folders) {
+      const teamId = peekTeam(folder)?.teamId
+      if (!teamId || tried.has(teamId)) continue
+      tried.add(teamId)
+      try {
+        return { folder, team: await openTeam(folder, passphrase) }
+      } catch (err) {
+        if (!(err instanceof Error) || err.message !== 'Wrong team passphrase.') throw err
+      }
+    }
+    throw new Error('Wrong team passphrase.')
   }
 
   /** Runs a sync round now and returns the new status. */
@@ -267,12 +300,12 @@ export class TeamController {
     // A fresh team: forget what this vault may have synced with any earlier team folder.
     this.opts.getVault().database.prepare('DELETE FROM sync_state').run()
     writeTeamConfig(this.opts.dataDir, { role: 'folder', folder, teamId, teamName, deviceId })
-    this.startFolder(folder, teamName, deviceId)
+    this.startFolder(folder, teamId, teamName, deviceId)
     await this.runSync()
     return this.status()
   }
 
-  private startFolder(folder: string, teamName: string, deviceId: string): void {
+  private startFolder(folder: string, teamId: string, teamName: string, deviceId: string): void {
     const vault = (): Vault => this.opts.getVault()
     const sync = new FolderSync({
       folder,
@@ -281,7 +314,7 @@ export class TeamController {
       db: () => vault().database,
       filesDir: () => join(vault().dataDir, 'files')
     })
-    this.folderState = { folder, teamName, sync, lastSyncAt: null, error: null, pending: 0 }
+    this.folderState = { folder, teamId, teamName, deviceId, sync, lastSyncAt: null, error: null, pending: 0 }
     this.syncTimer = setInterval(() => void this.runSync(), this.opts.syncIntervalMs ?? SYNC_INTERVAL_MS)
     this.syncTimer.unref?.()
   }
@@ -297,7 +330,18 @@ export class TeamController {
       if (result.imported > 0) this.opts.onRemoteChange?.()
     } catch (err) {
       state.error = err instanceof Error ? err.message : 'Sync failed'
+      if (!hasTeam(state.folder)) await this.relocate(state)
     }
+  }
+
+  /** The team folder moved (e.g. Google Drive got another drive letter): find it again by team id. */
+  private async relocate(state: FolderState): Promise<void> {
+    const moved = (await findTeamFolders(this.opts.searchRoots)).find((f) => peekTeam(f)?.teamId === state.teamId)
+    if (!moved || this.folderState !== state) return
+    writeTeamConfig(this.opts.dataDir, { role: 'folder', folder: moved, teamId: state.teamId, teamName: state.teamName, deviceId: state.deviceId })
+    this.stopTimers()
+    this.startFolder(moved, state.teamId, state.teamName, state.deviceId)
+    await this.runSync()
   }
 
   private stopTimers(): void {

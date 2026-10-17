@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, type Dirent } from 'node:fs'
+import { readdir, stat } from 'node:fs/promises'
+import { delimiter, join } from 'node:path'
 import { z } from 'zod'
 
 /** Everything the app writes lives under this subfolder of the folder the user picks. */
@@ -111,4 +112,70 @@ export function peekTeam(folder: string): { teamId: string; teamName: string } |
   } catch {
     return null
   }
+}
+
+/**
+ * Places a cloud drive app keeps its synced files on this PC. Google Drive for desktop mounts a
+ * drive letter (G: by default) with "My Drive" and "Shared drives"; folders shared with you show up
+ * there once added to My Drive (their real files live in .shortcut-targets-by-id).
+ */
+export function defaultSearchRoots(env: NodeJS.ProcessEnv = process.env, platform = process.platform): string[] {
+  const roots: string[] = []
+  const extra = env.AGENCY_VAULT_SEARCH_ROOTS
+  if (extra) roots.push(...extra.split(delimiter).filter(Boolean))
+  if (platform === 'win32') {
+    for (const letter of 'DEFGHIJKLMNOPQRSTUVWXYZC') {
+      const drive = `${letter}:\\`
+      roots.push(join(drive, 'My Drive'), join(drive, 'Shared drives'), join(drive, '.shortcut-targets-by-id'))
+    }
+  }
+  const home = env.USERPROFILE || env.HOME
+  for (const dir of [env.OneDrive, env.OneDriveCommercial, env.OneDriveConsumer]) if (dir) roots.push(dir)
+  if (home) {
+    for (const name of ['Google Drive', 'My Drive', 'GoogleDrive', 'Dropbox', 'OneDrive']) roots.push(join(home, name))
+    roots.push(join(home, 'Library', 'CloudStorage'))
+  }
+  return [...new Set(roots)]
+}
+
+const SKIP_DIRS = new Set([TEAM_DIR, 'node_modules', '.git', '$RECYCLE.BIN', 'System Volume Information'])
+
+/**
+ * Folders under roots that hold a team vault, searched a few levels deep. Cloud drives can be slow
+ * to list, so the search stops after a fixed number of folders.
+ */
+export async function findTeamFolders(roots: string[] = defaultSearchRoots(), opts: { depth?: number; maxDirs?: number } = {}): Promise<string[]> {
+  const maxDepth = opts.depth ?? 4
+  let budget = opts.maxDirs ?? 3000
+  const found: string[] = []
+  const seen = new Set<string>()
+  const visit = async (dir: string, depth: number): Promise<void> => {
+    if (budget-- <= 0 || seen.has(dir)) return
+    seen.add(dir)
+    if (hasTeam(dir)) found.push(dir)
+    if (depth >= maxDepth) return
+    let entries: Dirent[]
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (SKIP_DIRS.has(entry.name) || entry.isFile()) continue
+      const child = join(dir, entry.name)
+      // Drive shortcuts can look like links; follow them only if they lead to a folder.
+      if (!entry.isDirectory()) {
+        try {
+          if (!(await stat(child)).isDirectory()) continue
+        } catch {
+          continue
+        }
+      }
+      await visit(child, depth + 1)
+    }
+  }
+  for (const root of roots) {
+    if (existsSync(root)) await visit(root, 0)
+  }
+  return found
 }

@@ -32,7 +32,7 @@ const createFolderTeamInput = z.object({
   teamName: z.string().trim().max(100),
   passphrase: z.string().max(1024)
 })
-const joinFolderTeamInput = z.object({ folder: folderInput, passphrase: z.string().max(1024) })
+const joinFolderTeamInput = z.object({ folder: folderInput.optional(), passphrase: z.string().max(1024) })
 // Calls that only read; anything else changed the vault and should reach teammates soon.
 const READ_ONLY = /:(list|get|reveal|preview)$/
 
