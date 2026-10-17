@@ -157,3 +157,8 @@ button.danger { color: var(--danger); }
 .notice.reminder { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 label.check { flex-direction: row; align-items: center; gap: 8px; }
 label.check input { width: auto; }
+.panel h3 { margin: 18px 0 8px; font-size: 15px; }
+.pairing-code { font-size: 18px; font-weight: 600; letter-spacing: 1px; }
+.team-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.team-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.facts + .actions { margin-top: 12px; }

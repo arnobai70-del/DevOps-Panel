@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { AppInfo, BackupCounts, BackupStatus } from '../../../shared/types'
 import { Modal } from '../components/Modal'
+import { TeamPanel } from '../components/TeamPanel'
 import { errorText, formatBytes } from '../lib'
 
 const MIN_PASSPHRASE = 10
@@ -14,8 +15,11 @@ export function Settings(): React.JSX.Element {
   const loadStatus = useCallback(async () => setStatus(await window.vault.backups.status()), [])
 
   useEffect(() => {
-    void window.vault.app.info().then(setInfo)
-    void loadStatus()
+    void window.vault.app.info().then((appInfo) => {
+      setInfo(appInfo)
+      // A joined PC has no vault of its own to back up; the host makes the backups.
+      if (appInfo.mode !== 'client') void loadStatus()
+    })
   }, [loadStatus])
 
   return (
@@ -23,32 +27,48 @@ export function Settings(): React.JSX.Element {
       <header className="page-header">
         <h1>Settings</h1>
       </header>
-      <section className="panel">
-        <h2>Backup</h2>
-        <p>
-          {status === null
-            ? '…'
-            : status.lastBackupAt
-              ? `Last backup: ${new Date(status.lastBackupAt).toLocaleString()}`
-              : 'No backup has been made from this vault yet.'}
-        </p>
-        <p className="muted">
-          A backup is one encrypted <code>.apv</code> file with all projects, credentials, documents, notes and links. Save it
-          on a USB drive or another disk. It can only be opened with its passphrase, so store the passphrase separately.
-        </p>
-        {message && <div className="notice">{message}</div>}
-        <div className="actions start">
-          <button className="primary" onClick={() => setDialog('backup')}>
-            Back up now…
-          </button>
-          <button onClick={() => setDialog('restore')}>Restore from backup…</button>
-        </div>
-      </section>
+      {info?.mode === 'client' ? (
+        <section className="panel">
+          <h2>Backup</h2>
+          <p className="muted">This PC uses a team vault. Backups are made on the host PC, where the data is stored.</p>
+        </section>
+      ) : (
+        <section className="panel">
+          <h2>Backup</h2>
+          <p>
+            {status === null
+              ? '…'
+              : status.lastBackupAt
+                ? `Last backup: ${new Date(status.lastBackupAt).toLocaleString()}`
+                : 'No backup has been made from this vault yet.'}
+          </p>
+          <p className="muted">
+            A backup is one encrypted <code>.apv</code> file with all projects, credentials, documents, notes and links. Save it
+            on a USB drive or another disk. It can only be opened with its passphrase, so store the passphrase separately.
+          </p>
+          {message && <div className="notice">{message}</div>}
+          <div className="actions start">
+            <button className="primary" onClick={() => setDialog('backup')}>
+              Back up now…
+            </button>
+            <button onClick={() => setDialog('restore')}>Restore from backup…</button>
+          </div>
+        </section>
+      )}
+      <TeamPanel onRoleChange={() => void window.vault.app.info().then(setInfo)} />
       <section className="panel">
         <h2>Storage</h2>
         <dl className="facts">
           <dt>Mode</dt>
-          <dd>Personal Local (data stays on this PC)</dd>
+          <dd>
+            {info === null
+              ? '…'
+              : info.mode === 'client'
+                ? 'Team vault (data is stored on the host PC)'
+                : info.mode === 'host'
+                  ? 'Team host (data stays on this PC and is shared on the office network)'
+                  : 'Personal Local (data stays on this PC)'}
+          </dd>
           <dt>Data folder</dt>
           <dd className="mono">{info?.dataDir ?? '…'}</dd>
           <dt>Key protection</dt>

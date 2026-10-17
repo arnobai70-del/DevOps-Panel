@@ -1,9 +1,11 @@
 import { app, BrowserWindow, safeStorage, shell, type IpcMainInvokeEvent } from 'electron'
+import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { unprotectedKeys, type KeyProtector } from './services/encryption'
 import { Vault } from './services/vault'
 import { registerIpcHandlers, type VaultContext } from './ipc/handlers'
+import { TeamController } from './team/controller'
 
 // Keep data in %APPDATA%\AgencyProjectVault rather than a folder named after the display name.
 app.setPath('userData', join(app.getPath('appData'), 'AgencyProjectVault'))
@@ -84,19 +86,26 @@ if (!app.requestSingleInstanceLock()) {
     }
   })
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     const protector = keyProtector()
-    const opened: VaultContext = { vault: Vault.open(app.getPath('userData'), protector), protector }
+    const dataDir = app.getPath('userData')
+    const vault = Vault.open(dataDir, protector)
+    const opened: VaultContext = {
+      vault,
+      protector,
+      team: new TeamController({ dataDir, protector, getVault: () => opened.vault, hostName: hostname() })
+    }
     ctx = opened
     opened.vault.documents.cleanupOrphans().catch((err: unknown) => {
       console.error('[startup] orphan cleanup failed:', err instanceof Error ? err.message : err)
     })
+    await opened.team.init()
     registerIpcHandlers(
       opened,
       () => ({
         version: app.getVersion(),
         dataDir: opened.vault.dataDir,
-        mode: 'personal',
+        mode: opened.team.role,
         keyProtection: opened.vault.encryptor.protection
       }),
       isTrustedSender
@@ -112,7 +121,9 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on('will-quit', () => {
-    ctx?.vault.close()
+    if (!ctx) return
+    void ctx.team.close()
+    ctx.vault.close()
     ctx = null
   })
 }

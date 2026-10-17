@@ -26,9 +26,19 @@ export function Dashboard({
   const [error, setError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [backup, setBackup] = useState<BackupStatus | null>(null)
+  const [teamProblem, setTeamProblem] = useState<string | null>(null)
 
   useEffect(() => {
-    window.vault.backups.status().then(setBackup, () => setBackup(null))
+    void window.vault.team.status().then(
+      (team) => {
+        if (team.role === 'client') {
+          setTeamProblem(team.error)
+        } else {
+          window.vault.backups.status().then(setBackup, () => setBackup(null))
+        }
+      },
+      () => undefined
+    )
   }, [])
   const reminder = backupReminder(backup)
 
@@ -67,7 +77,8 @@ export function Dashboard({
         </button>
       </header>
 
-      {error && <div className="error-banner">{error}</div>}
+      {teamProblem && <div className="error-banner">{teamProblem}</div>}
+      {!teamProblem && error && <div className="error-banner">{error}</div>}
       {reminder && (
         <div className="notice reminder">
           <span>{reminder} Keep an encrypted copy on another drive.</span>
@@ -76,7 +87,7 @@ export function Dashboard({
       )}
 
       {projects === null ? (
-        <p className="muted">Loading…</p>
+        !error && !teamProblem && <p className="muted">Loading…</p>
       ) : projects.length === 0 ? (
         <div className="empty">
           <h2>{search ? 'No matching projects' : 'No projects yet'}</h2>
