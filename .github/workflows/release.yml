@@ -50,6 +50,10 @@ jobs:
         run: npm test
       - if: steps.tag.outputs.skip != 'true'
         run: npm run dist:win -- --publish never
+        env:
+          # Google sign-in client, built into the installer; kept only in the repository's Actions secrets.
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       - name: Create GitHub Release
         if: steps.tag.outputs.skip != 'true'
         shell: bash

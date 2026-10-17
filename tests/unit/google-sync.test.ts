@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { GoogleAuth, SignedOutError, type GoogleAccount } from '../../src/main/google/auth'
+import { importClientFile, loadGoogleClient, parseClientFile } from '../../src/main/google/client'
+import { createBackup, readBackup, swapInStaged } from '../../src/main/services/backup'
 import { unprotectedKeys } from '../../src/main/services/encryption'
 import { Vault } from '../../src/main/services/vault'
 import { readTeamConfig } from '../../src/main/team/config'
@@ -86,19 +88,23 @@ function fakeDrive(): { fetch: typeof fetch; files: Map<string, FakeFile>; offli
   return state
 }
 
-function fakeGoogle(email = 'agency@gmail.com'): GoogleAccount & { signIns: number } {
+function fakeGoogle(email = 'agency@gmail.com'): GoogleAccount & { signIns: number; expired: boolean } {
   let signedIn: string | null = null
   return {
     signIns: 0,
+    expired: false,
+    configured: () => true,
     email: () => signedIn,
     async signIn() {
       this.signIns++
+      this.expired = false
       signedIn = email
       return email
     },
     cancelSignIn: () => undefined,
-    accessToken: async () => {
-      if (!signedIn) throw new SignedOutError('Not signed in to Google.')
+    async accessToken() {
+      if (!signedIn) throw new SignedOutError('Not signed in to Google. Sign in again.')
+      if (this.expired) throw new SignedOutError('Google sign-in has expired or was removed. Sign in again.')
       return 'token-ok'
     },
     signOut: () => {
@@ -316,5 +322,76 @@ describe('Google sign-in', () => {
     auth.cancelSignIn()
     await expect(pending).rejects.toThrow(/cancelled/)
     rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('Google Drive backups and expired sign-ins', () => {
+  it('backs up to Drive on one PC and restores on another, which then republishes to the team', async () => {
+    const a = pc('A')
+    const project = a.vault.projects.create({ name: 'Backed up' })
+    a.vault.credentials.save({ projectId: project.id, serviceName: 'cPanel', password: 'Backup-Canary-9' })
+    await a.team.connectGoogle()
+    const temp = join(root, 'a.apv')
+    await createBackup({ db: a.vault.database, dataDir: a.vault.dataDir, encryptor: a.vault.encryptor, destPath: temp, passphrase: 'backup passphrase', appVersion: 'test' })
+    await a.team.uploadDriveBackup('AgencyProjectVault-backup-2026-10-17T22-00-00-000Z.apv', readFileSync(temp))
+    await expect(a.team.uploadDriveBackup('../evil.apv', Buffer.from('x'))).rejects.toThrow(/Invalid backup name/)
+
+    // A loses the project; B (signed in to the same account) restores the Drive backup.
+    await a.vault.deleteProject(project.id)
+    await sync(a)
+    const b = pc('B')
+    await b.team.connectGoogle()
+    expect(b.vault.projects.list()).toEqual([])
+    const [name] = await b.team.listDriveBackups()
+    expect(name).toBe('AgencyProjectVault-backup-2026-10-17T22-00-00-000Z.apv')
+    const downloaded = join(root, 'b.apv')
+    writeFileSync(downloaded, await b.team.downloadDriveBackup(name!))
+    const staged = await readBackup(downloaded, 'backup passphrase', join(b.dir, '.restore-test'))
+    await b.team.pauseSync()
+    b.vault.close()
+    swapInStaged(b.dir, staged, unprotectedKeys)
+    b.vault = Vault.open(b.dir, unprotectedKeys)
+    await b.team.resumeAfterRestore()
+    const cred = b.vault.credentials.list(project.id)[0]!
+    expect(b.vault.credentials.reveal(cred.id, 'password')).toBe('Backup-Canary-9')
+
+    // The restored project reaches A again.
+    await sync(a)
+    expect(a.vault.projects.list().map((p) => p.name)).toEqual(['Backed up'])
+    expect(a.vault.credentials.reveal(a.vault.credentials.list(project.id)[0]!.id, 'password')).toBe('Backup-Canary-9')
+  })
+
+  it('asks to sign in again when the Google sign-in expires, then carries on', async () => {
+    const a = pc('A')
+    await a.team.connectGoogle()
+    a.google.expired = true
+    a.vault.projects.create({ name: 'Made while expired' })
+    expect(await a.team.syncNow()).toMatchObject({ role: 'google', error: expect.stringMatching(/Sign in again/) })
+    expect(await a.team.connectGoogle()).toMatchObject({ role: 'google', error: null })
+    expect(a.google.signIns).toBe(2)
+    const b = pc('B')
+    await b.team.connectGoogle()
+    expect(b.vault.projects.list().map((p) => p.name)).toEqual(['Made while expired'])
+  })
+})
+
+describe('Google OAuth client file', () => {
+  const file = (o: unknown): string => JSON.stringify(o)
+  const id = '1234567890-abc.apps.googleusercontent.com'
+
+  it('reads the file Google Cloud downloads, from env, the data folder or next to the app', () => {
+    expect(parseClientFile(file({ installed: { client_id: id, client_secret: 'GOCSPX-x', redirect_uris: ['http://localhost'] } }))).toEqual({ clientId: id, clientSecret: 'GOCSPX-x' })
+    expect(() => parseClientFile(file({ installed: { client_id: 'nope', client_secret: 's' } }))).toThrow(/not a Google OAuth client file/)
+    expect(() => parseClientFile('{')).toThrow(/not a Google OAuth client file/)
+
+    const dataDir = join(root, 'data')
+    const exeDir = join(root, 'exe')
+    expect(loadGoogleClient(dataDir, exeDir, {})).toEqual({ clientId: '', clientSecret: '' })
+    const picked = join(root, 'client_secret_123.json')
+    writeFileSync(picked, file({ installed: { client_id: id, client_secret: 'GOCSPX-picked' } }))
+    importClientFile(dataDir, picked)
+    expect(loadGoogleClient(dataDir, exeDir, {})).toEqual({ clientId: id, clientSecret: 'GOCSPX-picked' })
+    expect(loadGoogleClient(dataDir, exeDir, { APV_GOOGLE_CLIENT_ID: 'env-id', APV_GOOGLE_CLIENT_SECRET: 'env-secret' })).toEqual({ clientId: 'env-id', clientSecret: 'env-secret' })
+    expect(loadGoogleClient(join(root, 'none'), exeDir, { APV_GOOGLE_OAUTH_FILE: picked })).toEqual({ clientId: id, clientSecret: 'GOCSPX-picked' })
   })
 })

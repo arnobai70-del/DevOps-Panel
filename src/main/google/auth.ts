@@ -24,6 +24,8 @@ export interface GoogleClient {
 
 /** What sync needs from a signed-in Google account. Tests pass a fake. */
 export interface GoogleAccount {
+  /** Whether an OAuth client is available to sign in with. */
+  configured(): boolean
   email(): string | null
   signIn(): Promise<string>
   cancelSignIn(): void
@@ -51,7 +53,8 @@ export class GoogleAuth implements GoogleAccount {
     private readonly opts: {
       dataDir: string
       protector: KeyProtector
-      client: GoogleClient
+      /** Read at each sign-in, so a client file imported later takes effect without a restart. */
+      client: GoogleClient | (() => GoogleClient)
       openExternal: (url: string) => Promise<void> | void
       fetch?: typeof fetch
       now?: () => number
@@ -60,6 +63,18 @@ export class GoogleAuth implements GoogleAccount {
 
   private get file(): string {
     return join(this.opts.dataDir, 'google', 'account.json')
+  }
+
+  private client(): GoogleClient {
+    return typeof this.opts.client === 'function' ? this.opts.client() : this.opts.client
+  }
+
+  configured(): boolean {
+    try {
+      return !!this.client().clientId
+    } catch {
+      return false
+    }
   }
 
   private get fetch(): typeof fetch {
@@ -80,8 +95,8 @@ export class GoogleAuth implements GoogleAccount {
 
   /** Opens Google's sign-in page in the browser and waits for the user to finish there. */
   async signIn(): Promise<string> {
-    const { clientId, clientSecret } = this.opts.client
-    if (!clientId) throw new Error('Google sign-in is not set up in this build yet.')
+    const { clientId, clientSecret } = this.client()
+    if (!clientId) throw new Error('Google sign-in is not set up on this PC yet. Choose the Google OAuth client file (JSON) first.')
     this.cancelSignIn()
     const verifier = base64url(randomBytes(32))
     const state = base64url(randomBytes(16))
@@ -131,7 +146,7 @@ export class GoogleAuth implements GoogleAccount {
     const now = this.opts.now?.() ?? Date.now()
     if (this.access && this.access.expiresAt - 60_000 > now) return this.access.token
     const saved = this.saved()
-    if (!saved) throw new SignedOutError('Not signed in to Google.')
+    if (!saved) throw new SignedOutError('Not signed in to Google. Sign in again.')
     let refreshToken: string
     try {
       refreshToken = this.opts.protector.unprotect(Buffer.from(saved.refreshToken, 'base64')).toString('utf8')
@@ -141,8 +156,8 @@ export class GoogleAuth implements GoogleAccount {
     const tokens = await this.token({
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
-      client_id: this.opts.client.clientId,
-      client_secret: this.opts.client.clientSecret
+      client_id: this.client().clientId,
+      client_secret: this.client().clientSecret
     })
     return this.remember(tokens)
   }

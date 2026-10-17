@@ -23,6 +23,37 @@ function setSkipped(value: boolean): void {
   }
 }
 
+/** Whether this PC has a Google OAuth client, and a way to import its JSON file when it does not. */
+function useClientSetup(): { configured: boolean | null; importFile: () => Promise<void>; importError: string | null } {
+  const [configured, setConfigured] = useState<boolean | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
+  useEffect(() => {
+    void window.vault.app.info().then((info) => setConfigured(info.googleConfigured))
+  }, [])
+  const importFile = async (): Promise<void> => {
+    setImportError(null)
+    try {
+      if (await window.vault.team.importGoogleClient()) setConfigured(true)
+    } catch (err) {
+      setImportError(errorText(err))
+    }
+  }
+  return { configured, importFile, importError }
+}
+
+function ClientSetup({ importFile, importError }: { importFile: () => Promise<void>; importError: string | null }): React.JSX.Element {
+  return (
+    <>
+      <p className="hint">
+        This copy of the app has no Google sign-in set up yet. Choose the OAuth client file you downloaded from Google Cloud
+        (client_secret_….json). It is kept only in this PC&apos;s app data folder.
+      </p>
+      {importError && <div className="error-banner">{importError}</div>}
+      <button onClick={() => void importFile()}>Choose Google OAuth file…</button>
+    </>
+  )
+}
+
 /** Signs in with Google and starts syncing; the page reloads so it shows the merged team data. */
 function useConnect(): { connect: () => Promise<void>; cancel: () => void; busy: boolean; error: string | null } {
   const [busy, setBusy] = useState(false)
@@ -47,6 +78,7 @@ function useConnect(): { connect: () => Promise<void>; cancel: () => void; busy:
 /** First screen on a PC that is not signed in: one button, nothing else to fill in. */
 export function SignInScreen({ onSkip }: { onSkip: () => void }): React.JSX.Element {
   const { connect, cancel, busy, error } = useConnect()
+  const { configured, importFile, importError } = useClientSetup()
   return (
     <div className="welcome">
       <div className="welcome-box">
@@ -56,7 +88,9 @@ export function SignInScreen({ onSkip }: { onSkip: () => void }): React.JSX.Elem
           sees and edits the same projects, credentials, documents, notes and links.
         </p>
         {error && <div className="error-banner">{error}</div>}
-        {busy ? (
+        {configured === false ? (
+          <ClientSetup importFile={importFile} importError={importError} />
+        ) : busy ? (
           <>
             <p className="muted">Finish signing in in the browser window that just opened…</p>
             <button onClick={cancel}>Cancel</button>
@@ -121,6 +155,7 @@ export function SyncBadge(): React.JSX.Element | null {
 /** Settings section for the Google account. */
 export function AccountPanel({ status, onChange }: { status: TeamStatus; onChange: () => void }): React.JSX.Element {
   const { connect, cancel, busy, error } = useConnect()
+  const { configured, importFile, importError } = useClientSetup()
   const [actionError, setActionError] = useState<string | null>(null)
 
   if (status.role === 'google') {
@@ -128,6 +163,14 @@ export function AccountPanel({ status, onChange }: { status: TeamStatus; onChang
       <section className="panel">
         <h2>Google account</h2>
         {status.error && <div className="error-banner">{status.error}</div>}
+        {error && <div className="error-banner">{error}</div>}
+        {status.error && /sign in again/i.test(status.error) && (
+          <div className="actions start">
+            <button className="primary" disabled={busy} onClick={() => void connect()}>
+              {busy ? 'Finish signing in in the browser…' : 'Sign in again'}
+            </button>
+          </div>
+        )}
         {actionError && <div className="error-banner">{actionError}</div>}
         <p>
           Everything syncs through <strong>{status.email}</strong>&apos;s Google Drive. Changes reach the other PCs within
@@ -169,7 +212,9 @@ export function AccountPanel({ status, onChange }: { status: TeamStatus; onChang
         the other PCs.
       </p>
       <div className="actions start">
-        {busy ? (
+        {configured === false ? (
+          <ClientSetup importFile={importFile} importError={importError} />
+        ) : busy ? (
           <>
             <span className="muted">Finish signing in in the browser…</span>
             <button onClick={cancel}>Cancel</button>

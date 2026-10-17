@@ -74,12 +74,16 @@ const api: VaultAPI = {
     leaveFolder: () => invoke('team:leaveFolder'),
     connectGoogle: () => invoke('team:connectGoogle'),
     cancelGoogleSignIn: () => invoke('team:cancelGoogleSignIn'),
-    signOutGoogle: () => invoke('team:signOutGoogle')
+    signOutGoogle: () => invoke('team:signOutGoogle'),
+    importGoogleClient: () => invoke('team:importGoogleClient')
   },
   backups: {
     status: () => invoke('backups:status'),
     create: (passphrase) => invoke('backups:create', passphrase),
-    restore: (passphrase) => invoke('backups:restore', passphrase)
+    restore: (passphrase) => invoke('backups:restore', passphrase),
+    createInDrive: (passphrase) => invoke('backups:createInDrive', passphrase),
+    listInDrive: () => invoke('backups:listInDrive'),
+    restoreFromDrive: (input) => invoke('backups:restoreFromDrive', input)
   }
 }
 

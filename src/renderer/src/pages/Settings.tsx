@@ -10,7 +10,7 @@ const MIN_PASSPHRASE = 10
 export function Settings(): React.JSX.Element {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [status, setStatus] = useState<BackupStatus | null>(null)
-  const [dialog, setDialog] = useState<'backup' | 'restore' | null>(null)
+  const [dialog, setDialog] = useState<'backup' | 'restore' | 'driveBackup' | 'driveRestore' | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
   const loadStatus = useCallback(async () => setStatus(await window.vault.backups.status()), [])
@@ -57,6 +57,19 @@ export function Settings(): React.JSX.Element {
             </button>
             <button onClick={() => setDialog('restore')}>Restore from backup…</button>
           </div>
+          {team?.role === 'google' && (
+            <>
+              <h3>Google Drive</h3>
+              <p className="muted">
+                Keep encrypted backups in the app&apos;s folder in {team.email}&apos;s Google Drive, and restore one on any PC
+                signed in to that account.
+              </p>
+              <div className="actions start">
+                <button onClick={() => setDialog('driveBackup')}>Back up to Google Drive…</button>
+                <button onClick={() => setDialog('driveRestore')}>Restore from Google Drive…</button>
+              </div>
+            </>
+          )}
         </section>
       )}
       {team && (team.role === 'personal' || team.role === 'google') && <AccountPanel status={team} onChange={loadTeam} />}
@@ -95,8 +108,9 @@ export function Settings(): React.JSX.Element {
           <dd>{info?.version ?? '…'}</dd>
         </dl>
       </section>
-      {dialog === 'backup' && (
+      {(dialog === 'backup' || dialog === 'driveBackup') && (
         <BackupDialog
+          toDrive={dialog === 'driveBackup'}
           onClose={() => setDialog(null)}
           onDone={(text) => {
             setDialog(null)
@@ -105,7 +119,9 @@ export function Settings(): React.JSX.Element {
           }}
         />
       )}
-      {dialog === 'restore' && <RestoreDialog onClose={() => setDialog(null)} />}
+      {(dialog === 'restore' || dialog === 'driveRestore') && (
+        <RestoreDialog fromDrive={dialog === 'driveRestore'} synced={team?.role === 'google'} onClose={() => setDialog(null)} />
+      )}
     </div>
   )
 }
@@ -113,7 +129,15 @@ export function Settings(): React.JSX.Element {
 const describeCounts = (c: BackupCounts): string =>
   `${c.projects} projects, ${c.credentials} credentials, ${c.documents} documents, ${c.notes} notes, ${c.links} links`
 
-function BackupDialog({ onClose, onDone }: { onClose: () => void; onDone: (message: string) => void }): React.JSX.Element {
+function BackupDialog({
+  toDrive,
+  onClose,
+  onDone
+}: {
+  toDrive: boolean
+  onClose: () => void
+  onDone: (message: string) => void
+}): React.JSX.Element {
   const [passphrase, setPassphrase] = useState('')
   const [confirmation, setConfirmation] = useState('')
   const [busy, setBusy] = useState(false)
@@ -126,7 +150,7 @@ function BackupDialog({ onClose, onDone }: { onClose: () => void; onDone: (messa
     setBusy(true)
     setError(null)
     try {
-      const result = await window.vault.backups.create(passphrase)
+      const result = toDrive ? await window.vault.backups.createInDrive(passphrase) : await window.vault.backups.create(passphrase)
       if (result) onDone(`Backup saved to ${result.path} (${formatBytes(result.bytes)}): ${describeCounts(result.counts)}.`)
       else setBusy(false)
     } catch (err) {
@@ -136,7 +160,7 @@ function BackupDialog({ onClose, onDone }: { onClose: () => void; onDone: (messa
   }
 
   return (
-    <Modal title="Back up now" onClose={busy ? () => undefined : onClose}>
+    <Modal title={toDrive ? 'Back up to Google Drive' : 'Back up now'} onClose={busy ? () => undefined : onClose}>
       <form className="form" onSubmit={(e) => void submit(e)}>
         <label>
           Backup passphrase
@@ -156,7 +180,7 @@ function BackupDialog({ onClose, onDone }: { onClose: () => void; onDone: (messa
             Cancel
           </button>
           <button type="submit" className="primary" disabled={busy}>
-            {busy ? 'Backing up…' : 'Choose where to save…'}
+            {busy ? 'Backing up…' : toDrive ? 'Back up to Drive' : 'Choose where to save…'}
           </button>
         </div>
       </form>
@@ -164,7 +188,19 @@ function BackupDialog({ onClose, onDone }: { onClose: () => void; onDone: (messa
   )
 }
 
-function RestoreDialog({ onClose }: { onClose: () => void }): React.JSX.Element {
+function RestoreDialog({ fromDrive, synced, onClose }: { fromDrive: boolean; synced: boolean; onClose: () => void }): React.JSX.Element {
+  const [names, setNames] = useState<string[] | null>(null)
+  const [name, setName] = useState('')
+  useEffect(() => {
+    if (!fromDrive) return
+    window.vault.backups.listInDrive().then(
+      (list) => {
+        setNames(list)
+        setName(list[0] ?? '')
+      },
+      (err: unknown) => setError(errorText(err))
+    )
+  }, [fromDrive])
   const [passphrase, setPassphrase] = useState('')
   const [agreed, setAgreed] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -176,7 +212,7 @@ function RestoreDialog({ onClose }: { onClose: () => void }): React.JSX.Element 
     setBusy(true)
     setError(null)
     try {
-      const result = await window.vault.backups.restore(passphrase)
+      const result = fromDrive ? await window.vault.backups.restoreFromDrive({ name, passphrase }) : await window.vault.backups.restore(passphrase)
       if (result) {
         setDone(
           `Restored the backup from ${new Date(result.backupCreatedAt).toLocaleString()}: ${describeCounts(result.counts)}. ` +
@@ -204,12 +240,31 @@ function RestoreDialog({ onClose }: { onClose: () => void }): React.JSX.Element 
   }
 
   return (
-    <Modal title="Restore from backup" onClose={busy ? () => undefined : onClose}>
+    <Modal title={fromDrive ? 'Restore from Google Drive' : 'Restore from backup'} onClose={busy ? () => undefined : onClose}>
       <form className="form" onSubmit={(e) => void submit(e)}>
         <p>
           Restoring replaces everything in this vault with the contents of the backup. The backup is fully checked first; if
           anything is wrong, nothing changes. Your current data is moved to a safety folder, not deleted.
+          {synced && ' The restored data is then synced to the other PCs; anything added in the team since the backup stays.'}
         </p>
+        {fromDrive && (
+          <label>
+            Backup in Google Drive
+            {names === null ? (
+              <span className="muted">Loading…</span>
+            ) : names.length === 0 ? (
+              <span className="muted">No backups in Google Drive yet.</span>
+            ) : (
+              <select value={name} onChange={(e) => setName(e.target.value)}>
+                {names.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            )}
+          </label>
+        )}
         <label>
           Backup passphrase
           <input type="password" autoFocus value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
@@ -223,8 +278,8 @@ function RestoreDialog({ onClose }: { onClose: () => void }): React.JSX.Element 
           <button type="button" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="submit" className="primary" disabled={busy || !agreed || !passphrase}>
-            {busy ? 'Checking and restoring…' : 'Choose backup file…'}
+          <button type="submit" className="primary" disabled={busy || !agreed || !passphrase || (fromDrive && !name)}>
+            {busy ? 'Checking and restoring…' : fromDrive ? 'Restore' : 'Choose backup file…'}
           </button>
         </div>
       </form>

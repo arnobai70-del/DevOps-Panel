@@ -60,6 +60,8 @@ export interface FolderSyncOptions {
   /** Local document store (the vault's files/ directory). */
   filesDir: () => string
   now?: () => number
+  /** Stamp every row as edited now in the first round (after a restore, so restored data wins). */
+  restamp?: boolean
 }
 
 // Rows are JSON in the records; BLOB columns (credential ciphertext) are wrapped so they survive.
@@ -79,11 +81,13 @@ export class FolderSync {
   private clock = 0
   private running: Promise<SyncResult> | null = null
   private readonly store: SyncStore
+  private restamp: boolean
 
   constructor(private readonly opts: FolderSyncOptions) {
     const store = opts.store ?? (opts.folder ? new FolderStore(opts.folder) : null)
     if (!store) throw new Error('No sync store')
     this.store = store
+    this.restamp = !!opts.restamp
     const derive = (info: string): Buffer => Buffer.from(hkdfSync('sha256', opts.teamKey, 'agency-project-vault', info, 32))
     this.recordKey = derive('sync-records-v1')
     this.fileKey = derive('sync-files-v1')
@@ -104,6 +108,7 @@ export class FolderSync {
     const db = this.opts.db()
     this.clock = Math.max(this.clock, this.maxStamp(db))
     const exported = await this.exportChanges(db)
+    this.restamp = false
     const { imported, pending } = await this.importChanges(db)
     return { exported, imported, pending }
   }
@@ -115,7 +120,7 @@ export class FolderSync {
   private tick(editedAt?: unknown): number {
     const now = this.opts.now?.() ?? Date.now()
     const edited = typeof editedAt === 'string' ? Date.parse(editedAt) : NaN
-    const at = Number.isFinite(edited) && edited <= now ? edited : now
+    const at = !this.restamp && Number.isFinite(edited) && edited <= now ? edited : now
     this.clock = Math.max(this.clock + 1, at)
     return this.clock
   }

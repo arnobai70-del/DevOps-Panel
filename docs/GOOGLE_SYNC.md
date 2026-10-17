@@ -10,23 +10,33 @@
 
 Gmail-টাই এখন সুরক্ষা: যার কাছে ওই Gmail-এর password থাকবে, সে সব credential দেখতে পাবে। তাই ওই account-এ 2-step verification চালু রাখুন।
 
-## One-time setup for the build (Google Cloud OAuth client)
+## Google OAuth client (one time)
 
-Google requires every app that signs in to Google to have its own OAuth client. Create it once with the Google
-account that owns the project:
+The app needs the Google Cloud OAuth client (type **Desktop app**, scope `drive.file`, Google Drive API enabled).
+Nothing about it is kept in the source code. The app looks for it in this order:
 
-1. Open <https://console.cloud.google.com>, create a project.
-2. **APIs & Services → Library → Google Drive API → Enable**.
-3. **OAuth consent screen** (Google Auth Platform): app name and support email; audience **External** (or
-   **Internal** for a Workspace domain). The app asks only for `openid`, `email` and `drive.file`, which are
-   non-sensitive scopes, so no Google verification is needed. **Publish** the app so sign-ins do not expire after
-   7 days.
-4. **Credentials → Create credentials → OAuth client ID → Desktop app**.
-5. Put the client ID and secret in `src/main/google/client.ts`. For installed apps Google does not treat the client
-   secret as confidential; each sign-in is protected by PKCE.
+1. `APV_GOOGLE_CLIENT_ID` / `APV_GOOGLE_CLIENT_SECRET`, or a JSON file named by `APV_GOOGLE_OAUTH_FILE` (development).
+2. `google-oauth.json` in the app's data folder (`%APPDATA%\AgencyProjectVault`). The sign-in screen offers
+   **Choose Google OAuth file…** when nothing else is found; it copies the `client_secret_….json` downloaded from
+   Google Cloud there.
+3. `google-oauth.json` next to the installed `.exe`.
+4. Built into the installer from the repository's GitHub Actions secrets `GOOGLE_OAUTH_CLIENT_ID` and
+   `GOOGLE_OAUTH_CLIENT_SECRET` (Settings → Secrets and variables → Actions). With these set, no PC has to choose a
+   file.
+
+For installed apps Google does not treat the client secret as confidential (it ships inside every desktop app);
+each sign-in is protected by PKCE. `google-oauth.json` and `client_secret*.json` are git-ignored.
+
+## Backups in Google Drive
+
+Settings → Backup → **Back up to Google Drive…** writes the usual encrypted `.apv` backup (its own passphrase) into
+the app's Drive folder under `backups/`. **Restore from Google Drive…** lists them on any PC signed in to the same
+account. After a restore on a synced PC the restored rows are published as fresh edits, so they reach the other PCs;
+rows the team added after the backup stay.
 
 ## How it works
 
+- An expired or revoked sign-in shows "Sign in again" in Settings; syncing resumes after it.
 - Sign-in uses the OAuth loopback flow: the system browser opens Google's page, Google redirects to a one-time
   server on `127.0.0.1`, and the app exchanges the code (with PKCE) for tokens. Only the refresh token is stored,
   in `google/account.json`, protected by Windows DPAPI like the vault key.

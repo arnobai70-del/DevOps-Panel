@@ -8,7 +8,7 @@ import type { Vault } from '../services/vault'
 import { FolderSync } from '../sync/folderSync'
 import type { SyncStore } from '../sync/store'
 import { DriveClient, DriveStore } from '../google/drive'
-import type { GoogleAccount } from '../google/auth'
+import { SignedOutError, type GoogleAccount } from '../google/auth'
 import { rekeyCredentials } from '../sync/rekey'
 import { createTeam, findTeamFolders, hasTeam, openTeam, peekTeam, type TeamInfo } from '../sync/teamFolder'
 import { hello, pairStart, pairStatus, TeamClient, type PinnedHost } from './client'
@@ -31,6 +31,9 @@ interface FolderState {
   teamName: string
   deviceId: string
   sync: FolderSync
+  store: SyncStore | null
+  /** The Google sign-in expired or was removed; syncing waits for the user to sign in again. */
+  signedOut: boolean
   lastSyncAt: string | null
   error: string | null
   pending: number
@@ -49,6 +52,7 @@ export class TeamController {
   private folderState: FolderState | null = null
   private syncTimer: NodeJS.Timeout | null = null
   private changeTimer: NodeJS.Timeout | null = null
+  private inflight: Promise<void> | null = null
 
   constructor(
     private readonly opts: {
@@ -309,7 +313,14 @@ export class TeamController {
     if (!google) throw new Error('Google sign-in is not available here.')
     if (this.host) throw new Error('This PC is sharing its vault on the office network. Stop sharing first.')
     if (this.client) throw new Error('This PC is joined to a team vault on the office network. Leave it first.')
-    if (this.folderState?.kind === 'google') return this.status()
+    if (this.folderState?.kind === 'google') {
+      // Already set up: only an expired sign-in needs the browser again.
+      if (this.folderState.signedOut) {
+        await google.signIn()
+        await this.runSync()
+      }
+      return this.status()
+    }
     const email = google.email() ?? (await google.signIn())
     const store = this.driveStore(await new DriveClient(() => google.accessToken(), this.opts.driveFetch).teamFolder())
     await store.check()
@@ -339,6 +350,59 @@ export class TeamController {
     this.opts.google?.signOut()
     writeTeamConfig(this.opts.dataDir, { role: 'personal' })
     return this.status()
+  }
+
+  // ---- backups in Google Drive ----
+
+  private requireDrive(): FolderState & { store: SyncStore } {
+    const state = this.folderState
+    if (state?.kind !== 'google' || !state.store) throw new Error('Sign in with Google first.')
+    return state as FolderState & { store: SyncStore }
+  }
+
+  async uploadDriveBackup(name: string, data: Buffer): Promise<void> {
+    if (!BACKUP_NAME.test(name)) throw new Error('Invalid backup name.')
+    await this.requireDrive().store.write(`backups/${name}`, data)
+  }
+
+  /** Backup files in the app's Drive folder, newest first. */
+  async listDriveBackups(): Promise<string[]> {
+    const names = [...(await this.requireDrive().store.list('backups/')).keys()].map((n) => n.slice('backups/'.length))
+    return names.filter((n) => BACKUP_NAME.test(n)).sort().reverse()
+  }
+
+  async downloadDriveBackup(name: string): Promise<Buffer> {
+    if (!BACKUP_NAME.test(name)) throw new Error('Invalid backup name.')
+    const data = await this.requireDrive().store.read(`backups/${name}`)
+    if (!data) throw new Error('That backup is no longer in Google Drive.')
+    return data
+  }
+
+  /** Stops syncing (waiting for a round in progress) before the vault is swapped out by a restore. */
+  async pauseSync(): Promise<void> {
+    this.stopTimers()
+    await this.inflight
+  }
+
+  /**
+   * After a restore on a synced PC: take the team key again and publish every restored row as a
+   * fresh edit, so the restored data reaches the other PCs and nothing the team added since is lost.
+   */
+  async resumeAfterRestore(): Promise<void> {
+    const state = this.folderState
+    if (!state) return
+    if (state.kind === 'google' && state.store) {
+      const team = parseDriveTeam(await state.store.read(DRIVE_TEAM_FILE))
+      if (team) this.adoptKey(team.key, team.keyVersion)
+    }
+    this.opts.getVault().database.prepare('DELETE FROM sync_state').run()
+    this.stopTimers()
+    this.startFolder(state.folder, state.teamId, state.teamName, state.deviceId, state.store ?? undefined, state.email ?? undefined, true)
+    await this.runSync()
+  }
+
+  googleConfigured(): boolean {
+    return this.opts.google?.configured() ?? false
   }
 
   cancelGoogleSignIn(): void {
@@ -383,22 +447,38 @@ export class TeamController {
     return this.status()
   }
 
-  private startFolder(folder: string, teamId: string, teamName: string, deviceId: string, store?: SyncStore, email?: string): void {
+  private startFolder(
+    folder: string,
+    teamId: string,
+    teamName: string,
+    deviceId: string,
+    store?: SyncStore,
+    email?: string,
+    restamp = false
+  ): void {
     const vault = (): Vault => this.opts.getVault()
     const sync = new FolderSync({
       folder,
       store,
+      restamp,
       teamKey: vault().encryptor.exportKey(),
       deviceId,
       db: () => vault().database,
       filesDir: () => join(vault().dataDir, 'files')
     })
-    this.folderState = { kind: store ? 'google' : 'folder', email: email ?? null, folder, teamId, teamName, deviceId, sync, lastSyncAt: null, error: null, pending: 0 }
+    this.folderState = { kind: store ? 'google' : 'folder', email: email ?? null, folder, teamId, teamName, deviceId, sync, store: store ?? null, signedOut: false, lastSyncAt: null, error: null, pending: 0 }
     this.syncTimer = setInterval(() => void this.runSync(), this.opts.syncIntervalMs ?? SYNC_INTERVAL_MS)
     this.syncTimer.unref?.()
   }
 
-  private async runSync(): Promise<void> {
+  private runSync(): Promise<void> {
+    this.inflight = this.syncRound().finally(() => {
+      this.inflight = null
+    })
+    return this.inflight
+  }
+
+  private async syncRound(): Promise<void> {
     const state = this.folderState
     if (!state) return
     try {
@@ -409,6 +489,7 @@ export class TeamController {
       if (result.imported > 0) this.opts.onRemoteChange?.()
     } catch (err) {
       state.error = err instanceof Error ? err.message : 'Sync failed'
+      state.signedOut = err instanceof SignedOutError
       if (state.kind === 'folder' && !hasTeam(state.folder)) await this.relocate(state)
     }
   }
@@ -479,6 +560,7 @@ export class TeamController {
 }
 
 const DRIVE_TEAM_FILE = 'team.json'
+const BACKUP_NAME = /^[\w.-]+\.apv$/
 interface DriveTeam {
   teamId: string
   keyVersion: number
