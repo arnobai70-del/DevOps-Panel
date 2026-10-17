@@ -1,11 +1,12 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { httpUrl } from '../../shared/schemas'
 import type { AppInfo, BackupResult, DocumentSummary, IpcResult, RestoreResult } from '../../shared/types'
+import { importClientFile } from '../google/client'
 import { createBackup, inspectStaged, lastBackupAt, readBackup, swapInStaged } from '../services/backup'
 import { executableRefusal, isExecutableName, safeFilename } from '../services/documents'
 import type { KeyProtector } from '../services/encryption'
@@ -153,6 +154,19 @@ export function registerIpcHandlers(
   handle('team:joinFolderTeam', (_e, input) => ctx.team.joinFolderTeam(joinFolderTeamInput.parse(input)))
   handle('team:syncNow', () => ctx.team.syncNow())
   handle('team:leaveFolder', () => ctx.team.leaveFolder())
+  handle('team:connectGoogle', () => ctx.team.connectGoogle())
+  handle('team:cancelGoogleSignIn', () => ctx.team.cancelGoogleSignIn())
+  handle('team:signOutGoogle', () => ctx.team.signOutGoogle())
+  handle('team:importGoogleClient', async (event) => {
+    const result = await dialog.showOpenDialog(windowOf(event), {
+      title: 'Choose the Google OAuth client file (client_secret_….json)',
+      properties: ['openFile'],
+      filters: [{ name: 'Google OAuth client', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePaths[0]) return false
+    importClientFile(ctx.vault.dataDir, result.filePaths[0])
+    return true
+  })
 
   const localOnly = (): void => {
     if (ctx.team.client) throw new Error('Backups are made on the host PC, where the team vault is stored.')
@@ -204,6 +218,32 @@ export function registerIpcHandlers(
     })
   )
 
+  const backupName = (): string => `AgencyProjectVault-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.apv`
+
+  /** Verifies the backup, swaps it in, and on a Google-synced PC republishes it to the team. */
+  const restoreFrom = async (sourcePath: string, secret: string): Promise<RestoreResult> => {
+    const dataDir = ctx.vault.dataDir
+    const stagingDir = join(dataDir, `.restore-${randomUUID()}`)
+    try {
+      // Decrypt and verify everything before the live vault is touched.
+      const staged = await readBackup(sourcePath, secret, stagingDir)
+      const counts = inspectStaged(staged)
+      const synced = ctx.team.role === 'google'
+      if (synced) await ctx.team.pauseSync()
+      ctx.vault.close()
+      let safetyCopyDir: string
+      try {
+        safetyCopyDir = swapInStaged(dataDir, staged, ctx.protector)
+      } finally {
+        ctx.vault = Vault.open(dataDir, ctx.protector)
+        if (synced) await ctx.team.resumeAfterRestore()
+      }
+      return { backupCreatedAt: staged.manifest.createdAt, counts, safetyCopyDir }
+    } finally {
+      await rm(stagingDir, { recursive: true, force: true })
+    }
+  }
+
   handle('backups:restore', (event, passphrase) =>
     exclusive(async (): Promise<RestoreResult | null> => {
       localOnly()
@@ -217,22 +257,43 @@ export function registerIpcHandlers(
         filters: [{ name: 'Agency Project Vault backup', extensions: ['apv'] }]
       })
       if (result.canceled || !result.filePaths[0]) return null
-      const dataDir = ctx.vault.dataDir
-      const stagingDir = join(dataDir, `.restore-${randomUUID()}`)
+      return restoreFrom(result.filePaths[0], secret)
+    })
+  )
+
+  handle('backups:createInDrive', (_e, passphrase) =>
+    exclusive(async (): Promise<BackupResult> => {
+      const secret = passphraseArg(passphrase)
+      const name = backupName()
+      const temp = join(tmpdir(), `apv-${randomUUID()}.apv`)
       try {
-        // Decrypt and verify everything before the live vault is touched.
-        const staged = await readBackup(result.filePaths[0], secret, stagingDir)
-        const counts = inspectStaged(staged)
-        ctx.vault.close()
-        let safetyCopyDir: string
-        try {
-          safetyCopyDir = swapInStaged(dataDir, staged, ctx.protector)
-        } finally {
-          ctx.vault = Vault.open(dataDir, ctx.protector)
-        }
-        return { backupCreatedAt: staged.manifest.createdAt, counts, safetyCopyDir }
+        const done = await createBackup({
+          db: ctx.vault.database,
+          dataDir: ctx.vault.dataDir,
+          encryptor: ctx.vault.encryptor,
+          destPath: temp,
+          passphrase: secret,
+          appVersion: app.getVersion()
+        })
+        await ctx.team.uploadDriveBackup(name, await readFile(temp))
+        return { path: `Google Drive › Agency Project Vault › ${name}`, ...done }
       } finally {
-        await rm(stagingDir, { recursive: true, force: true })
+        await rm(temp, { force: true })
+      }
+    })
+  )
+
+  handle('backups:listInDrive', () => ctx.team.listDriveBackups())
+
+  handle('backups:restoreFromDrive', (_e, input) =>
+    exclusive(async (): Promise<RestoreResult> => {
+      const { name, passphrase } = z.object({ name: z.string().max(200), passphrase: z.string().max(1024) }).parse(input)
+      const temp = join(tmpdir(), `apv-${randomUUID()}.apv`)
+      try {
+        await writeFile(temp, await ctx.team.downloadDriveBackup(name), { mode: 0o600 })
+        return await restoreFrom(temp, passphrase)
+      } finally {
+        await rm(temp, { force: true })
       }
     })
   )

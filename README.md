@@ -25,6 +25,9 @@ publish the next one. Each pull request's CI also builds the installer under **C
 The installer is not code-signed yet, so Windows SmartScreen shows "Windows protected your PC": choose
 **More info → Run anyway**. Installing per user needs no admin rights. Uninstalling keeps the vault data.
 
+Teams share everything by signing in with the same Google account on every PC; the data syncs through that
+account's Google Drive. See [docs/GOOGLE_SYNC.md](docs/GOOGLE_SYNC.md).
+
 See [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) for backups and [docs/TEAM_MODE.md](docs/TEAM_MODE.md) for sharing
 one vault between PCs on the office network. [docs/TEAM_SYNC.md](docs/TEAM_SYNC.md) explains sharing through a Google
 Drive / OneDrive / Dropbox folder instead, with no PC kept on; teammates join with only the team passphrase.

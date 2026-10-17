@@ -170,6 +170,15 @@ export type TeamStatus =
       pending: number
     }
   | {
+      role: 'google'
+      /** The Google account whose Drive holds the team's data. */
+      email: string
+      lastSyncAt: string | null
+      /** Why the last sync failed (offline, signed out…). */
+      error: string | null
+      pending: number
+    }
+  | {
       role: 'client'
       hostName: string
       address: string
@@ -183,8 +192,10 @@ export type TeamStatus =
 export interface AppInfo {
   version: string
   dataDir: string
-  mode: 'personal' | 'host' | 'client' | 'folder'
+  mode: 'personal' | 'host' | 'client' | 'folder' | 'google'
   keyProtection: 'safeStorage' | 'none'
+  /** Whether a Google OAuth client is available on this PC (built in or imported). */
+  googleConfigured: boolean
 }
 
 /** Result envelope for every IPC call, so the renderer gets a clean message instead of an Electron stack trace. */
@@ -256,6 +267,12 @@ export interface VaultAPI {
     joinFolderTeam(input: { folder?: string; passphrase: string }): Promise<TeamStatus>
     syncNow(): Promise<TeamStatus>
     leaveFolder(): Promise<TeamStatus>
+    /** Opens Google sign-in in the browser, then syncs through that account's Drive. */
+    connectGoogle(): Promise<TeamStatus>
+    cancelGoogleSignIn(): Promise<void>
+    signOutGoogle(): Promise<TeamStatus>
+    /** Asks for the Google OAuth client JSON file and keeps a copy in the app's data folder; false when cancelled. */
+    importGoogleClient(): Promise<boolean>
   }
   backups: {
     status(): Promise<BackupStatus>
@@ -263,6 +280,11 @@ export interface VaultAPI {
     create(passphrase: string): Promise<BackupResult | null>
     /** Asks for an .apv file, verifies it, then replaces the current vault; null when cancelled. */
     restore(passphrase: string): Promise<RestoreResult | null>
+    /** Encrypted backup straight into the app's Google Drive folder. */
+    createInDrive(passphrase: string): Promise<BackupResult>
+    /** Backup file names in Google Drive, newest first. */
+    listInDrive(): Promise<string[]>
+    restoreFromDrive(input: { name: string; passphrase: string }): Promise<RestoreResult>
   }
 }
 

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { SignInScreen, signInSkipped, SyncBadge } from './components/GoogleSync'
 import { Dashboard } from './pages/Dashboard'
 import { ProjectDetail } from './pages/ProjectDetail'
 import { Settings } from './pages/Settings'
@@ -7,6 +8,14 @@ type Route = { page: 'dashboard' } | { page: 'settings' } | { page: 'project'; p
 
 export function App(): React.JSX.Element {
   const [route, setRoute] = useState<Route>({ page: 'dashboard' })
+  // A PC that is not signed in starts on the Google sign-in screen.
+  const [needsSignIn, setNeedsSignIn] = useState<boolean | null>(null)
+  useEffect(() => {
+    void window.vault.team.status().then(
+      (status) => setNeedsSignIn(status.role === 'personal' && !signInSkipped()),
+      () => setNeedsSignIn(false)
+    )
+  }, [])
 
   const nav = (page: 'dashboard' | 'settings', label: string): React.JSX.Element => (
     <button
@@ -17,6 +26,9 @@ export function App(): React.JSX.Element {
     </button>
   )
 
+  if (needsSignIn === null) return <div className="welcome" />
+  if (needsSignIn) return <SignInScreen onSkip={() => setNeedsSignIn(false)} />
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -25,6 +37,7 @@ export function App(): React.JSX.Element {
           {nav('dashboard', 'Dashboard')}
           {nav('settings', 'Settings')}
         </nav>
+        <SyncBadge />
       </aside>
       <main className="content">
         {route.page === 'dashboard' && <Dashboard onOpen={(projectId) => setRoute({ page: 'project', projectId })} onSettings={() => setRoute({ page: 'settings' })} />}

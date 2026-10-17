@@ -5,3 +5,5 @@ coverage/
 *.log
 .DS_Store
 *.tsbuildinfo
+google-oauth.json
+client_secret*.json
