@@ -12,7 +12,7 @@ export function App(): React.JSX.Element {
   const [needsSignIn, setNeedsSignIn] = useState<boolean | null>(null)
   useEffect(() => {
     void window.vault.team.status().then(
-      (status) => setNeedsSignIn(status.role === 'personal' && !signInSkipped()),
+      (status) => setNeedsSignIn((status.role === 'personal' || status.role === 'folder') && !signInSkipped()),
       () => setNeedsSignIn(false)
     )
   }, [])

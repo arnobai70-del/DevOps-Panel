@@ -228,3 +228,30 @@ export function AccountPanel({ status, onChange }: { status: TeamStatus; onChang
     </section>
   )
 }
+
+/** Dashboard notice on a PC that is not signed in yet, so sharing is always one click away. */
+export function SignInBanner(): React.JSX.Element | null {
+  const [show, setShow] = useState(false)
+  const { connect, cancel, busy, error } = useConnect()
+  const { configured, importFile, importError } = useClientSetup()
+  useEffect(() => {
+    void window.vault.team.status().then((s) => setShow(s.role !== 'google'))
+  }, [])
+  if (!show) return null
+  return (
+    <div className="notice reminder">
+      <span>
+        {error ?? importError ?? 'This PC is not shared with the team yet. Sign in with the team\'s Google account to share everything.'}
+      </span>
+      {configured === false ? (
+        <button onClick={() => void importFile()}>Choose Google OAuth file…</button>
+      ) : busy ? (
+        <button onClick={cancel}>Cancel sign-in</button>
+      ) : (
+        <button className="primary" onClick={() => void connect()}>
+          Sign in with Google
+        </button>
+      )}
+    </div>
+  )
+}
