@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import type { Project } from '../../../shared/types'
 import { CredentialsTab } from '../components/CredentialsTab'
 import { DocumentsTab } from '../components/DocumentsTab'
@@ -65,7 +65,7 @@ export function ProjectDetail({ projectId, onBack }: { projectId: string; onBack
           <button onClick={refresh}>Refresh</button>
         </div>
       )}
-      <div className="tabs" role="tablist" key={generation}>
+      <div className="tabs" role="tablist">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -78,10 +78,13 @@ export function ProjectDetail({ projectId, onBack }: { projectId: string; onBack
           </button>
         ))}
       </div>
-      {tab === 'overview' && <OverviewTab key={generation} project={project} onChanged={setProject} onDeleted={onBack} />}
-      {tab === 'credentials' && <CredentialsTab key={generation} projectId={project.id} />}
-      {tab === 'documents' && <DocumentsTab key={generation} projectId={project.id} />}
-      {tab === 'notes' && <NotesLinksTab key={generation} projectId={project.id} />}
+      {/* One keyed wrapper: bumping generation remounts the open tab so it reloads teammates' changes. */}
+      <Fragment key={`${tab}:${generation}`}>
+        {tab === 'overview' && <OverviewTab project={project} onChanged={setProject} onDeleted={onBack} />}
+        {tab === 'credentials' && <CredentialsTab projectId={project.id} />}
+        {tab === 'documents' && <DocumentsTab projectId={project.id} />}
+        {tab === 'notes' && <NotesLinksTab projectId={project.id} />}
+      </Fragment>
     </div>
   )
 }
