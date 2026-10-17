@@ -253,7 +253,7 @@ export interface VaultAPI {
     /** Opens a folder picker; returns the chosen path or null. */
     chooseFolder(): Promise<string | null>
     createFolderTeam(input: { folder: string; teamName: string; passphrase: string }): Promise<TeamStatus>
-    joinFolderTeam(input: { folder: string; passphrase: string }): Promise<TeamStatus>
+    joinFolderTeam(input: { folder?: string; passphrase: string }): Promise<TeamStatus>
     syncNow(): Promise<TeamStatus>
     leaveFolder(): Promise<TeamStatus>
   }

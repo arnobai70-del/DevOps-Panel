@@ -27,7 +27,7 @@ The installer is not code-signed yet, so Windows SmartScreen shows "Windows prot
 
 See [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) for backups and [docs/TEAM_MODE.md](docs/TEAM_MODE.md) for sharing
 one vault between PCs on the office network. [docs/TEAM_SYNC.md](docs/TEAM_SYNC.md) explains sharing through a Google
-Drive / OneDrive / Dropbox folder instead, with no PC kept on.
+Drive / OneDrive / Dropbox folder instead, with no PC kept on; teammates join with only the team passphrase.
 
 ## Development
 

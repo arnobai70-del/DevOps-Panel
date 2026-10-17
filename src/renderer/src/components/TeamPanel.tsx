@@ -379,6 +379,8 @@ function FolderTeamDialog({ mode, onClose }: { mode: 'create' | 'join'; onClose:
   const [confirmation, setConfirmation] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Joining finds the team folder by itself; picking it by hand is offered only if that fails.
+  const [manual, setManual] = useState(mode === 'create')
 
   async function choose(): Promise<void> {
     try {
@@ -391,7 +393,7 @@ function FolderTeamDialog({ mode, onClose }: { mode: 'create' | 'join'; onClose:
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault()
-    if (!folder) return setError('Choose the shared folder first.')
+    if (manual && !folder) return setError('Choose the shared folder first.')
     if (mode === 'create') {
       if (passphrase.length < MIN_TEAM_PASSPHRASE) return setError(`Use a team passphrase of at least ${MIN_TEAM_PASSPHRASE} characters.`)
       if (passphrase !== confirmation) return setError('The two passphrases do not match.')
@@ -399,11 +401,13 @@ function FolderTeamDialog({ mode, onClose }: { mode: 'create' | 'join'; onClose:
     setBusy(true)
     setError(null)
     try {
-      if (mode === 'create') await window.vault.team.createFolderTeam({ folder, teamName, passphrase })
-      else await window.vault.team.joinFolderTeam({ folder, passphrase })
+      if (mode === 'create') await window.vault.team.createFolderTeam({ folder: folder ?? '', teamName, passphrase })
+      else await window.vault.team.joinFolderTeam({ folder: folder ?? undefined, passphrase })
       window.location.reload()
     } catch (err) {
-      setError(errorText(err))
+      const text = errorText(err)
+      setError(text)
+      if (text.startsWith('No team folder found')) setManual(true)
       setBusy(false)
     }
   }
@@ -418,16 +422,19 @@ function FolderTeamDialog({ mode, onClose }: { mode: 'create' | 'join'; onClose:
           </p>
         ) : (
           <p className="hint">
-            Pick the team folder as it appears on this PC (for Google Drive, add it to My Drive or use &quot;Shared with
-            me&quot; in Drive for desktop) and enter the team passphrase. Projects already on this PC are added to the team.
+            Enter the team passphrase. The app finds the team folder in Google Drive, OneDrive or Dropbox on this PC by
+            itself, then the team&apos;s projects appear here and you can edit them. Projects already on this PC are added
+            to the team.
           </p>
         )}
-        <div className="file-pick">
-          <button type="button" onClick={() => void choose()} disabled={busy}>
-            Choose folder…
-          </button>
-          <span className="mono">{folder ?? 'No folder chosen'}</span>
-        </div>
+        {manual && (
+          <div className="file-pick">
+            <button type="button" onClick={() => void choose()} disabled={busy}>
+              Choose folder…
+            </button>
+            <span className="mono">{folder ?? 'No folder chosen'}</span>
+          </div>
+        )}
         {mode === 'create' && (
           <label>
             Team name
@@ -460,8 +467,8 @@ function FolderTeamDialog({ mode, onClose }: { mode: 'create' | 'join'; onClose:
           <button type="button" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="submit" className="primary" disabled={busy || !folder || !passphrase}>
-            {busy ? 'Setting up…' : mode === 'create' ? 'Create team' : 'Join team'}
+          <button type="submit" className="primary" disabled={busy || (manual && !folder) || !passphrase}>
+            {busy ? (mode === 'join' && !folder ? 'Finding team folder…' : 'Setting up…') : mode === 'create' ? 'Create team' : 'Join team'}
           </button>
         </div>
       </form>

@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, renameSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -6,7 +6,7 @@ import { unprotectedKeys } from '../../src/main/services/encryption'
 import { Vault } from '../../src/main/services/vault'
 import { TeamController } from '../../src/main/team/controller'
 import { readTeamConfig } from '../../src/main/team/config'
-import { TEAM_DIR } from '../../src/main/sync/teamFolder'
+import { TEAM_DIR, findTeamFolders } from '../../src/main/sync/teamFolder'
 
 interface Pc {
   dir: string
@@ -20,7 +20,7 @@ let shared: string
 const pcs: Pc[] = []
 const PASS = 'correct horse battery'
 
-function pc(name: string): Pc {
+function pc(name: string, searchRoots?: string[]): Pc {
   const dir = join(root, name)
   const created: Pc = { dir, vault: Vault.open(dir, unprotectedKeys), team: null as never, changes: 0 }
   created.team = new TeamController({
@@ -29,6 +29,7 @@ function pc(name: string): Pc {
     getVault: () => created.vault,
     hostName: name,
     syncIntervalMs: 3_600_000,
+    searchRoots,
     reopenVault: () => {
       created.vault.close()
       created.vault = Vault.open(dir, unprotectedKeys)
@@ -171,5 +172,33 @@ describe('team sync through a shared folder', () => {
     rmSync(shared, { recursive: true, force: true })
     expect(await restarted.syncNow()).toMatchObject({ role: 'folder', error: expect.stringMatching(/team folder is not available/) })
     await restarted.close()
+  })
+
+  it('joins with only the passphrase by finding the team folder in Google Drive, and follows it if the drive letter changes', async () => {
+    const drives = [join(root, 'G', 'My Drive'), join(root, 'H', 'My Drive')]
+    const teamFolder = join(drives[0], 'Clients', 'Agency Vault')
+    const other = join(drives[0], 'Other team')
+    mkdirSync(teamFolder, { recursive: true })
+    const a = pc('A')
+    a.vault.projects.create({ name: 'Owner project' })
+    await a.team.createFolderTeam({ folder: teamFolder, teamName: 'Agency', passphrase: PASS })
+    const stranger = pc('S')
+    await stranger.team.createFolderTeam({ folder: other, teamName: 'Other', passphrase: 'another passphrase' })
+    expect((await findTeamFolders(drives)).sort()).toEqual([teamFolder, other].sort())
+
+    const lost = pc('L', [join(root, 'nowhere')])
+    await expect(lost.team.joinFolderTeam({ passphrase: PASS })).rejects.toThrow(/No team folder found/)
+    const b = pc('B', drives)
+    await expect(b.team.joinFolderTeam({ passphrase: 'not the passphrase' })).rejects.toThrow(/Wrong team passphrase/)
+    expect(b.team.role).toBe('personal')
+    expect(await b.team.joinFolderTeam({ passphrase: PASS })).toMatchObject({ role: 'folder', folder: teamFolder, teamName: 'Agency' })
+    expect(b.vault.projects.list().map((p) => p.name)).toEqual(['Owner project'])
+
+    // Google Drive comes back as H: instead of G:; B finds the same team again and keeps syncing.
+    await a.team.close()
+    renameSync(join(root, 'G'), join(root, 'H'))
+    b.vault.projects.create({ name: 'After the move' })
+    expect(await b.team.syncNow()).toMatchObject({ role: 'folder', folder: join(drives[1], 'Clients', 'Agency Vault'), error: null })
+    expect(readTeamConfig(b.dir)).toMatchObject({ folder: join(drives[1], 'Clients', 'Agency Vault') })
   })
 })
