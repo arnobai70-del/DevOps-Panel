@@ -15,6 +15,15 @@ export type TeamConfig =
       /** Device token, protected with the same OS key protection as the vault key (base64). */
       token: string
     }
+  | {
+      role: 'folder'
+      /** The shared folder the user picked (e.g. inside Google Drive or OneDrive). */
+      folder: string
+      teamId: string
+      teamName: string
+      /** Random id of this PC, written into every record it syncs. */
+      deviceId: string
+    }
 
 const configSchema = z.discriminatedUnion('role', [
   z.object({ role: z.literal('personal') }),
@@ -29,6 +38,13 @@ const configSchema = z.discriminatedUnion('role', [
       hostName: z.string()
     }),
     token: z.string().min(1)
+  }),
+  z.object({
+    role: z.literal('folder'),
+    folder: z.string().min(1),
+    teamId: z.string().uuid(),
+    teamName: z.string(),
+    deviceId: z.string().min(1)
   })
 ])
 

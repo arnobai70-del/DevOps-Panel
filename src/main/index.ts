@@ -93,7 +93,19 @@ if (!app.requestSingleInstanceLock()) {
     const opened: VaultContext = {
       vault,
       protector,
-      team: new TeamController({ dataDir, protector, getVault: () => opened.vault, hostName: hostname() })
+      team: new TeamController({
+        dataDir,
+        protector,
+        getVault: () => opened.vault,
+        hostName: hostname(),
+        reopenVault: () => {
+          opened.vault.close()
+          opened.vault = Vault.open(dataDir, protector)
+        },
+        onRemoteChange: () => {
+          for (const win of BrowserWindow.getAllWindows()) win.webContents.send('vault:remote-change')
+        }
+      })
     }
     ctx = opened
     opened.vault.documents.cleanupOrphans().catch((err: unknown) => {

@@ -160,6 +160,16 @@ export type TeamStatus =
       devices: TeamDevice[]
     }
   | {
+      role: 'folder'
+      folder: string
+      teamName: string
+      lastSyncAt: string | null
+      /** Why the last sync failed (folder missing, cloud app not running…). */
+      error: string | null
+      /** Changes from teammates waiting for something (e.g. a file still uploading). */
+      pending: number
+    }
+  | {
       role: 'client'
       hostName: string
       address: string
@@ -173,7 +183,7 @@ export type TeamStatus =
 export interface AppInfo {
   version: string
   dataDir: string
-  mode: 'personal' | 'host' | 'client'
+  mode: 'personal' | 'host' | 'client' | 'folder'
   keyProtection: 'safeStorage' | 'none'
 }
 
@@ -184,6 +194,8 @@ export interface VaultAPI {
   app: {
     info(): Promise<AppInfo>
     openExternal(url: string): Promise<void>
+    /** Calls listener when teammates' changes arrive through folder sync; returns an unsubscribe. */
+    onRemoteChange(listener: () => void): () => void
   }
   projects: {
     list(query?: ProjectListQuery): Promise<Project[]>
@@ -238,6 +250,12 @@ export interface VaultAPI {
     /** Polls the host; on approval the app switches to the team vault. */
     joinStatus(requestId: string): Promise<'pending' | 'approved' | 'denied' | 'expired'>
     leave(): Promise<TeamStatus>
+    /** Opens a folder picker; returns the chosen path or null. */
+    chooseFolder(): Promise<string | null>
+    createFolderTeam(input: { folder: string; teamName: string; passphrase: string }): Promise<TeamStatus>
+    joinFolderTeam(input: { folder: string; passphrase: string }): Promise<TeamStatus>
+    syncNow(): Promise<TeamStatus>
+    leaveFolder(): Promise<TeamStatus>
   }
   backups: {
     status(): Promise<BackupStatus>

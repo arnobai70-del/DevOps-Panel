@@ -18,7 +18,7 @@ describe('openDatabase', () => {
     const tables = (db.prepare(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`).all() as { name: string }[]).map(
       (r) => r.name
     )
-    expect(tables).toEqual(['app_meta', 'credentials', 'documents', 'links', 'notes', 'projects', 'team_devices'])
+    expect(tables).toEqual(['app_meta', 'credentials', 'documents', 'links', 'notes', 'projects', 'sync_state', 'team_devices'])
     expect(db.prepare('SELECT revision, updated_at FROM links').all()).toEqual([])
     db.close()
   })
