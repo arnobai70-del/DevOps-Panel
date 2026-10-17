@@ -26,6 +26,16 @@ type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
 const CLIPBOARD_CLEAR_MS = 30_000
 const OPEN_DIR = join(tmpdir(), 'AgencyProjectVault-open')
 
+const folderInput = z.string().min(1).max(1000)
+const createFolderTeamInput = z.object({
+  folder: folderInput,
+  teamName: z.string().trim().max(100),
+  passphrase: z.string().max(1024)
+})
+const joinFolderTeamInput = z.object({ folder: folderInput, passphrase: z.string().max(1024) })
+// Calls that only read; anything else changed the vault and should reach teammates soon.
+const READ_ONLY = /:(list|get|reveal|preview)$/
+
 const joinInput = z.object({
   address: z.string().trim().min(1, 'Enter the host address').max(200),
   code: z.string().max(20),
@@ -64,7 +74,10 @@ export function registerIpcHandlers(
   const local = (): ReturnType<typeof vaultMethods> => vaultMethods(ctx.vault)
   const run = (method: string, ...args: unknown[]): Promise<unknown> | unknown => {
     const client = ctx.team.client
-    return client ? client.rpc(method, args) : local()[method]!(...args)
+    if (client) return client.rpc(method, args)
+    const result = local()[method]!(...args)
+    if (!READ_ONLY.test(method)) ctx.team.noteLocalChange()
+    return result
   }
   for (const channel of Object.keys(local())) {
     if (channel === 'documents:get') continue
@@ -129,6 +142,17 @@ export function registerIpcHandlers(
   handle('team:join', (_e, input) => ctx.team.join(joinInput.parse(input)))
   handle('team:joinStatus', (_e, id) => ctx.team.joinStatus(str(id)))
   handle('team:leave', () => ctx.team.leave())
+  handle('team:chooseFolder', async (event) => {
+    const result = await dialog.showOpenDialog(windowOf(event), {
+      title: 'Choose the shared folder (e.g. inside Google Drive or OneDrive)',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    return result.canceled || !result.filePaths[0] ? null : result.filePaths[0]
+  })
+  handle('team:createFolderTeam', (_e, input) => ctx.team.createFolderTeam(createFolderTeamInput.parse(input)))
+  handle('team:joinFolderTeam', (_e, input) => ctx.team.joinFolderTeam(joinFolderTeamInput.parse(input)))
+  handle('team:syncNow', () => ctx.team.syncNow())
+  handle('team:leaveFolder', () => ctx.team.leaveFolder())
 
   const localOnly = (): void => {
     if (ctx.team.client) throw new Error('Backups are made on the host PC, where the team vault is stored.')
@@ -183,6 +207,9 @@ export function registerIpcHandlers(
   handle('backups:restore', (event, passphrase) =>
     exclusive(async (): Promise<RestoreResult | null> => {
       localOnly()
+      if (ctx.team.role === 'folder') {
+        throw new Error('This PC syncs with a team folder. Stop folder sync before restoring, or the restore would mix with the team data.')
+      }
       const secret = passphraseArg(passphrase)
       const result = await dialog.showOpenDialog(windowOf(event), {
         title: 'Choose a backup to restore',

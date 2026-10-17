@@ -56,6 +56,9 @@ export function Dashboard({
     return () => clearTimeout(t)
   }, [search, showArchived, load])
 
+  // Teammates' projects show up as soon as folder sync brings them in.
+  useEffect(() => window.vault.app.onRemoteChange(() => void load(search, showArchived)), [search, showArchived, load])
+
   return (
     <div className="page">
       <header className="page-header">

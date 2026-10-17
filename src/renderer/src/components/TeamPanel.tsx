@@ -11,6 +11,7 @@ export function TeamPanel({ onRoleChange }: { onRoleChange: () => void }): React
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [joining, setJoining] = useState(false)
+  const [folderDialog, setFolderDialog] = useState<'create' | 'join' | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -25,7 +26,7 @@ export function TeamPanel({ onRoleChange }: { onRoleChange: () => void }): React
   }, [refresh])
 
   // While sharing, keep join requests and the code countdown fresh.
-  const sharing = status?.role === 'host' && status.running
+  const sharing = (status?.role === 'host' && status.running) || status?.role === 'folder'
   useEffect(() => {
     if (!sharing) return
     const t = setInterval(() => void refresh(), POLL_MS)
@@ -49,22 +50,73 @@ export function TeamPanel({ onRoleChange }: { onRoleChange: () => void }): React
 
   return (
     <section className="panel">
-      <h2>Team Sharing (office network)</h2>
+      <h2>Team Sharing</h2>
       {error && <div className="error-banner">{error}</div>}
       {status === null && <p className="muted">…</p>}
 
       {status?.role === 'personal' && (
         <>
+          <h3>Through Google Drive, OneDrive or Dropbox (recommended)</h3>
           <p>
-            Share this vault with the other PCs in the office, or join a vault another PC is sharing. Everything stays on
-            your local network; nothing goes to the internet.
+            Every PC keeps its own copy and syncs through a shared folder, encrypted with a team passphrase. No PC has to
+            stay on, and it works from anywhere with internet. No server, domain or VPS.
           </p>
           <div className="actions start">
-            <button className="primary" disabled={busy} onClick={() => void act(() => window.vault.team.enableHost())}>
+            <button className="primary" disabled={busy} onClick={() => setFolderDialog('create')}>
+              Create team folder…
+            </button>
+            <button disabled={busy} onClick={() => setFolderDialog('join')}>
+              Join team folder…
+            </button>
+          </div>
+          <h3>On the office network only</h3>
+          <p>
+            One PC shares its vault and the others connect to it. That PC must be on, with the app open, on the same
+            network.
+          </p>
+          <div className="actions start">
+            <button disabled={busy} onClick={() => void act(() => window.vault.team.enableHost())}>
               Share this vault
             </button>
             <button disabled={busy} onClick={() => setJoining(true)}>
               Join a team vault…
+            </button>
+          </div>
+        </>
+      )}
+
+      {status?.role === 'folder' && (
+        <>
+          <p>
+            This PC syncs with the team <strong>{status.teamName}</strong> through a shared folder. Changes you make reach
+            your team within seconds after the cloud app uploads them; theirs show up here the same way.
+          </p>
+          {status.error && <div className="error-banner">{status.error}</div>}
+          <dl className="facts">
+            <dt>Team folder</dt>
+            <dd className="mono">{status.folder}</dd>
+            <dt>Last sync</dt>
+            <dd>{status.lastSyncAt ? new Date(status.lastSyncAt).toLocaleString() : 'Not yet'}</dd>
+            {status.pending > 0 && (
+              <>
+                <dt>Waiting</dt>
+                <dd>{status.pending} change(s) from teammates are still arriving (usually a file being uploaded).</dd>
+              </>
+            )}
+          </dl>
+          <div className="actions start">
+            <button className="primary" disabled={busy} onClick={() => void act(() => window.vault.team.syncNow())}>
+              Sync now
+            </button>
+            <button
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm('Stop syncing with the team? This PC keeps its current copy of the data.')) {
+                  void act(() => window.vault.team.leaveFolder(), true)
+                }
+              }}
+            >
+              Stop syncing
             </button>
           </div>
         </>
@@ -216,6 +268,7 @@ export function TeamPanel({ onRoleChange }: { onRoleChange: () => void }): React
       )}
 
       {joining && <JoinDialog onClose={() => setJoining(false)} />}
+      {folderDialog && <FolderTeamDialog mode={folderDialog} onClose={() => setFolderDialog(null)} />}
     </section>
   )
 }
@@ -309,6 +362,106 @@ function JoinDialog({ onClose }: { onClose: () => void }): React.JSX.Element {
           </button>
           <button type="submit" className="primary" disabled={busy || !address || !code || !deviceName}>
             {busy ? 'Connecting…' : 'Send join request'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+const MIN_TEAM_PASSPHRASE = 10
+
+/** Create or join a team that syncs through a shared cloud folder. */
+function FolderTeamDialog({ mode, onClose }: { mode: 'create' | 'join'; onClose: () => void }): React.JSX.Element {
+  const [folder, setFolder] = useState<string | null>(null)
+  const [teamName, setTeamName] = useState('')
+  const [passphrase, setPassphrase] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function choose(): Promise<void> {
+    try {
+      const picked = await window.vault.team.chooseFolder()
+      if (picked) setFolder(picked)
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
+
+  async function submit(e: FormEvent): Promise<void> {
+    e.preventDefault()
+    if (!folder) return setError('Choose the shared folder first.')
+    if (mode === 'create') {
+      if (passphrase.length < MIN_TEAM_PASSPHRASE) return setError(`Use a team passphrase of at least ${MIN_TEAM_PASSPHRASE} characters.`)
+      if (passphrase !== confirmation) return setError('The two passphrases do not match.')
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      if (mode === 'create') await window.vault.team.createFolderTeam({ folder, teamName, passphrase })
+      else await window.vault.team.joinFolderTeam({ folder, passphrase })
+      window.location.reload()
+    } catch (err) {
+      setError(errorText(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title={mode === 'create' ? 'Create team folder' : 'Join team folder'} onClose={busy ? () => undefined : onClose}>
+      <form className="form" onSubmit={(e) => void submit(e)}>
+        {mode === 'create' ? (
+          <p className="hint">
+            Pick (or make) a folder inside Google Drive, OneDrive or Dropbox, e.g. <code>My Drive\Agency Vault</code>, and
+            share that folder with your teammates in Drive. Your current projects become the team&apos;s starting data.
+          </p>
+        ) : (
+          <p className="hint">
+            Pick the team folder as it appears on this PC (for Google Drive, add it to My Drive or use &quot;Shared with
+            me&quot; in Drive for desktop) and enter the team passphrase. Projects already on this PC are added to the team.
+          </p>
+        )}
+        <div className="file-pick">
+          <button type="button" onClick={() => void choose()} disabled={busy}>
+            Choose folder…
+          </button>
+          <span className="mono">{folder ?? 'No folder chosen'}</span>
+        </div>
+        {mode === 'create' && (
+          <label>
+            Team name
+            <input maxLength={100} placeholder="e.g. Our agency" value={teamName} onChange={(e) => setTeamName(e.target.value)} />
+          </label>
+        )}
+        <label>
+          Team passphrase
+          <input
+            type="password"
+            autoComplete={mode === 'create' ? 'new-password' : 'current-password'}
+            value={passphrase}
+            onChange={(e) => setPassphrase(e.target.value)}
+          />
+        </label>
+        {mode === 'create' && (
+          <>
+            <label>
+              Repeat passphrase
+              <input type="password" autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} />
+            </label>
+            <p className="hint">
+              Tell this passphrase to your teammates in person or by phone, not in the same place as the folder link. Anyone
+              with the folder and the passphrase can read every credential.
+            </p>
+          </>
+        )}
+        {error && <div className="error-banner">{error}</div>}
+        <div className="actions">
+          <button type="button" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="primary" disabled={busy || !folder || !passphrase}>
+            {busy ? 'Setting up…' : mode === 'create' ? 'Create team' : 'Join team'}
           </button>
         </div>
       </form>

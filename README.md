@@ -13,6 +13,7 @@ The full specification is in [docs/SPEC.md](docs/SPEC.md) (original: `docs/Agenc
 | 2 | Project edit/archive, encrypted credentials, documents, notes & links | done |
 | 3 | Encrypted backup/restore, Windows installer | done |
 | 4 | Optional LAN Team Mode (one host PC, two clients) | done |
+| 5 | Team sync through Google Drive / OneDrive / Dropbox (no server, no PC kept on) | done |
 
 ## Install (Windows)
 
@@ -25,7 +26,8 @@ The installer is not code-signed yet, so Windows SmartScreen shows "Windows prot
 **More info → Run anyway**. Installing per user needs no admin rights. Uninstalling keeps the vault data.
 
 See [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) for backups and [docs/TEAM_MODE.md](docs/TEAM_MODE.md) for sharing
-one vault between PCs on the office network.
+one vault between PCs on the office network. [docs/TEAM_SYNC.md](docs/TEAM_SYNC.md) explains sharing through a Google
+Drive / OneDrive / Dropbox folder instead, with no PC kept on.
 
 ## Development
 
@@ -49,6 +51,7 @@ src/
     preload.ts      the only bridge: a narrow, typed window.vault API
     ipc/            IPC handlers (sender check + zod validation) and the shared vault method table
     team/           LAN Team Mode: HTTPS host, pairing, pinned client, role config
+    sync/           Team sync through a shared cloud folder: team file, encrypted per-row records
     services/       projects, credentials, encryption, documents, notes/links, Vault
     db/             database open + versioned migrations
   renderer/         React UI (no Node, no fs, sandboxed)

@@ -18,6 +18,15 @@ export function ProjectDetail({ projectId, onBack }: { projectId: string; onBack
   const [project, setProject] = useState<Project | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
   const [error, setError] = useState<string | null>(null)
+  // Teammates' changes arrive in the background; refreshing remounts the tab with fresh data.
+  const [remoteChange, setRemoteChange] = useState(false)
+  const [generation, setGeneration] = useState(0)
+  useEffect(() => window.vault.app.onRemoteChange(() => setRemoteChange(true)), [])
+  const refresh = (): void => {
+    setRemoteChange(false)
+    setGeneration((g) => g + 1)
+    void reload()
+  }
 
   const reload = useCallback(async () => {
     try {
@@ -50,7 +59,13 @@ export function ProjectDetail({ projectId, onBack }: { projectId: string; onBack
         <h1>{project.name}</h1>
         <span className="badge">{project.archivedAt ? 'archived' : project.status}</span>
       </header>
-      <div className="tabs" role="tablist">
+      {remoteChange && (
+        <div className="notice reminder">
+          <span>Your team made changes. Refresh to see them.</span>
+          <button onClick={refresh}>Refresh</button>
+        </div>
+      )}
+      <div className="tabs" role="tablist" key={generation}>
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -63,10 +78,10 @@ export function ProjectDetail({ projectId, onBack }: { projectId: string; onBack
           </button>
         ))}
       </div>
-      {tab === 'overview' && <OverviewTab project={project} onChanged={setProject} onDeleted={onBack} />}
-      {tab === 'credentials' && <CredentialsTab projectId={project.id} />}
-      {tab === 'documents' && <DocumentsTab projectId={project.id} />}
-      {tab === 'notes' && <NotesLinksTab projectId={project.id} />}
+      {tab === 'overview' && <OverviewTab key={generation} project={project} onChanged={setProject} onDeleted={onBack} />}
+      {tab === 'credentials' && <CredentialsTab key={generation} projectId={project.id} />}
+      {tab === 'documents' && <DocumentsTab key={generation} projectId={project.id} />}
+      {tab === 'notes' && <NotesLinksTab key={generation} projectId={project.id} />}
     </div>
   )
 }

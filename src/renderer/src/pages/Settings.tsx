@@ -65,9 +65,11 @@ export function Settings(): React.JSX.Element {
               ? '…'
               : info.mode === 'client'
                 ? 'Team vault (data is stored on the host PC)'
-                : info.mode === 'host'
-                  ? 'Team host (data stays on this PC and is shared on the office network)'
-                  : 'Personal Local (data stays on this PC)'}
+                : info.mode === 'folder'
+                  ? 'Team folder sync (a full copy on this PC, synced through a shared folder)'
+                  : info.mode === 'host'
+                    ? 'Team host (data stays on this PC and is shared on the office network)'
+                    : 'Personal Local (data stays on this PC)'}
           </dd>
           <dt>Data folder</dt>
           <dd className="mono">{info?.dataDir ?? '…'}</dd>

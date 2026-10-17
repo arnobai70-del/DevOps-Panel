@@ -11,7 +11,14 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 const api: VaultAPI = {
   app: {
     info: () => invoke('app:info'),
-    openExternal: (url) => invoke('app:openExternal', url)
+    openExternal: (url) => invoke('app:openExternal', url),
+    onRemoteChange: (listener) => {
+      const handler = (): void => listener()
+      ipcRenderer.on('vault:remote-change', handler)
+      return () => {
+        ipcRenderer.off('vault:remote-change', handler)
+      }
+    }
   },
   projects: {
     list: (query) => invoke('projects:list', query),
@@ -59,7 +66,12 @@ const api: VaultAPI = {
     revoke: (deviceId) => invoke('team:revoke', deviceId),
     join: (input) => invoke('team:join', input),
     joinStatus: (requestId) => invoke('team:joinStatus', requestId),
-    leave: () => invoke('team:leave')
+    leave: () => invoke('team:leave'),
+    chooseFolder: () => invoke('team:chooseFolder'),
+    createFolderTeam: (input) => invoke('team:createFolderTeam', input),
+    joinFolderTeam: (input) => invoke('team:joinFolderTeam', input),
+    syncNow: () => invoke('team:syncNow'),
+    leaveFolder: () => invoke('team:leaveFolder')
   },
   backups: {
     status: () => invoke('backups:status'),
