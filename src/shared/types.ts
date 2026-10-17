@@ -192,6 +192,8 @@ export interface VaultAPI {
     update(update: ProjectUpdate): Promise<Project>
     archive(id: string): Promise<Project>
     restore(id: string): Promise<Project>
+    /** Permanently deletes the project with its credentials, documents, notes and links. */
+    delete(id: string): Promise<void>
   }
   credentials: {
     list(projectId: string): Promise<CredentialSummary[]>

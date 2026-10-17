@@ -138,6 +138,24 @@ export class ProjectService {
     return this.require(id)
   }
 
+  /**
+   * Permanently removes the project with all its credentials, documents, notes and links.
+   * Returns the storage keys of the project's document files so the caller can delete them.
+   */
+  delete(id: string): string[] {
+    this.require(id)
+    return this.db.transaction(() => {
+      const keys = (this.db.prepare('SELECT storage_key FROM documents WHERE project_id = ?').all(id) as { storage_key: string }[]).map(
+        (r) => r.storage_key
+      )
+      for (const table of ['credentials', 'documents', 'notes', 'links']) {
+        this.db.prepare(`DELETE FROM ${table} WHERE project_id = ?`).run(id)
+      }
+      this.db.prepare('DELETE FROM projects WHERE id = ?').run(id)
+      return keys
+    })()
+  }
+
   /** Hides the project from the dashboard; its credentials, documents and notes stay intact. */
   archive(id: string): Project {
     return this.setArchived(id, this.now())

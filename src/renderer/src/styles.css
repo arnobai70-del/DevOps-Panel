@@ -162,3 +162,4 @@ label.check input { width: auto; }
 .team-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .team-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
 .facts + .actions { margin-top: 12px; }
+button.primary.danger-fill { background: var(--danger); border-color: var(--danger); color: #fff; }

@@ -63,7 +63,7 @@ export function ProjectDetail({ projectId, onBack }: { projectId: string; onBack
           </button>
         ))}
       </div>
-      {tab === 'overview' && <OverviewTab project={project} onChanged={setProject} />}
+      {tab === 'overview' && <OverviewTab project={project} onChanged={setProject} onDeleted={onBack} />}
       {tab === 'credentials' && <CredentialsTab projectId={project.id} />}
       {tab === 'documents' && <DocumentsTab projectId={project.id} />}
       {tab === 'notes' && <NotesLinksTab projectId={project.id} />}

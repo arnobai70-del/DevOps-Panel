@@ -20,6 +20,7 @@ export function vaultMethods(vault: Vault): Record<string, Method> {
     'projects:update': (update) => vault.projects.update(update as never),
     'projects:archive': (id) => vault.projects.archive(str(id)),
     'projects:restore': (id) => vault.projects.restore(str(id)),
+    'projects:delete': (id) => vault.deleteProject(str(id)),
 
     'credentials:list': (projectId) => vault.credentials.list(str(projectId)),
     'credentials:save': (input) => vault.credentials.save(input as never),
