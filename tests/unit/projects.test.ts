@@ -68,3 +68,22 @@ describe('ProjectService', () => {
     expect(projects.list({ includeArchived: true })).toHaveLength(1)
   })
 })
+
+describe('ProjectService edits', () => {
+  it('updates with the current revision and rejects stale ones', () => {
+    const p = projects.create({ name: 'Old name' })
+    const updated = projects.update({ id: p.id, revision: p.revision, input: { name: 'New name', status: 'paused' } })
+    expect(updated).toMatchObject({ name: 'New name', status: 'paused', revision: 2 })
+    expect(() => projects.update({ id: p.id, revision: 1, input: { name: 'Lost update' } })).toThrow(/changed since you opened it/)
+    expect(projects.get(p.id)!.name).toBe('New name')
+  })
+
+  it('archives and restores without touching other data', () => {
+    const p = projects.create({ name: 'Keep me' })
+    expect(projects.archive(p.id).archivedAt).not.toBeNull()
+    expect(projects.list()).toEqual([])
+    expect(projects.restore(p.id).archivedAt).toBeNull()
+    expect(projects.list()).toHaveLength(1)
+    expect(() => projects.archive('00000000-0000-4000-8000-000000000000')).toThrow(/not found/)
+  })
+})

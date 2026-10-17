@@ -20,6 +20,14 @@ export function Settings(): React.JSX.Element {
           <dd>Personal Local (data stays on this PC)</dd>
           <dt>Data folder</dt>
           <dd className="mono">{info?.dataDir ?? '…'}</dd>
+          <dt>Key protection</dt>
+          <dd>
+            {info === null
+              ? '…'
+              : info.keyProtection === 'safeStorage'
+                ? 'Protected by Windows (DPAPI)'
+                : 'Not protected by the OS on this machine'}
+          </dd>
           <dt>Version</dt>
           <dd>{info?.version ?? '…'}</dd>
         </dl>

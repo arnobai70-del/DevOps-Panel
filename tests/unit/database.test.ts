@@ -19,6 +19,7 @@ describe('openDatabase', () => {
       (r) => r.name
     )
     expect(tables).toEqual(['app_meta', 'credentials', 'documents', 'links', 'notes', 'projects'])
+    expect(db.prepare('SELECT revision, updated_at FROM links').all()).toEqual([])
     db.close()
   })
 

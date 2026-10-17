@@ -2,26 +2,28 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Project } from '../../../shared/types'
 import { ProjectCard } from '../components/ProjectCard'
 import { ProjectForm } from '../components/ProjectForm'
+import { errorText } from '../lib'
 
-export function Dashboard(): React.JSX.Element {
+export function Dashboard({ onOpen }: { onOpen: (projectId: string) => void }): React.JSX.Element {
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [search, setSearch] = useState('')
+  const [showArchived, setShowArchived] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
 
-  const load = useCallback(async (query: string) => {
+  const load = useCallback(async (query: string, includeArchived: boolean) => {
     try {
-      setProjects(await window.vault.projects.list({ search: query || undefined }))
+      setProjects(await window.vault.projects.list({ search: query || undefined, includeArchived }))
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(errorText(err))
     }
   }, [])
 
   useEffect(() => {
-    const t = setTimeout(() => void load(search), 150)
+    const t = setTimeout(() => void load(search, showArchived), 150)
     return () => clearTimeout(t)
-  }, [search, load])
+  }, [search, showArchived, load])
 
   return (
     <div className="page">
@@ -35,6 +37,10 @@ export function Dashboard(): React.JSX.Element {
           onChange={(e) => setSearch(e.target.value)}
           aria-label="Search projects"
         />
+        <label className="toggle">
+          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+          Show archived
+        </label>
         <button className="primary" onClick={() => setAdding(true)}>
           + Add Project
         </button>
@@ -56,7 +62,7 @@ export function Dashboard(): React.JSX.Element {
       ) : (
         <div className="grid">
           {projects.map((p) => (
-            <ProjectCard key={p.id} project={p} />
+            <ProjectCard key={p.id} project={p} onOpen={() => onOpen(p.id)} />
           ))}
         </div>
       )}
@@ -64,9 +70,9 @@ export function Dashboard(): React.JSX.Element {
       {adding && (
         <ProjectForm
           onCancel={() => setAdding(false)}
-          onSaved={() => {
+          onSaved={(project) => {
             setAdding(false)
-            void load(search)
+            onOpen(project.id)
           }}
         />
       )}
