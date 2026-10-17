@@ -18,6 +18,7 @@ interface ProjectRow {
   developer_name: string | null
   tech_stack_json: string
   tags_json: string
+  custom_fields_json: string
   revision: number
   created_at: string
   updated_at: string
@@ -39,6 +40,7 @@ function toProject(row: ProjectRow): Project {
     developerName: row.developer_name,
     techStack: JSON.parse(row.tech_stack_json) as string[],
     tags: JSON.parse(row.tags_json) as string[],
+    customFields: JSON.parse(row.custom_fields_json) as Project['customFields'],
     revision: row.revision,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -62,9 +64,9 @@ export class ProjectService {
     const params: Record<string, string> = {}
     if (!query.includeArchived) where.push('archived_at IS NULL')
     if (query.search) {
-      // Projects hold no secrets, so name/description/tags/tech stack are safe to search.
+      // Projects hold no secrets, so name/description/tags/tech stack/custom fields are safe to search.
       where.push(
-        `(name LIKE @q ESCAPE '\\' OR description LIKE @q ESCAPE '\\' OR tags_json LIKE @q ESCAPE '\\' OR tech_stack_json LIKE @q ESCAPE '\\')`
+        `(name LIKE @q ESCAPE '\\' OR description LIKE @q ESCAPE '\\' OR tags_json LIKE @q ESCAPE '\\' OR tech_stack_json LIKE @q ESCAPE '\\' OR custom_fields_json LIKE @q ESCAPE '\\')`
       )
       params.q = `%${escapeLike(query.search)}%`
     }
@@ -91,11 +93,11 @@ export class ProjectService {
       .prepare(
         `INSERT INTO projects (
           id, name, description, type, status, website_url, admin_url, hosting_name,
-          domain_provider, repository_url, developer_name, tech_stack_json, tags_json,
+          domain_provider, repository_url, developer_name, tech_stack_json, tags_json, custom_fields_json,
           created_at, updated_at
         ) VALUES (
           @id, @name, @description, @type, @status, @websiteUrl, @adminUrl, @hostingName,
-          @domainProvider, @repositoryUrl, @developerName, @techStack, @tags,
+          @domainProvider, @repositoryUrl, @developerName, @techStack, @tags, @customFields,
           @timestamp, @timestamp
         )`
       )
@@ -104,6 +106,7 @@ export class ProjectService {
         id,
         techStack: JSON.stringify(input.techStack),
         tags: JSON.stringify(input.tags),
+        customFields: JSON.stringify(input.customFields),
         timestamp
       })
     return this.get(id)!
@@ -118,6 +121,7 @@ export class ProjectService {
           website_url = @websiteUrl, admin_url = @adminUrl, hosting_name = @hostingName,
           domain_provider = @domainProvider, repository_url = @repositoryUrl,
           developer_name = @developerName, tech_stack_json = @techStack, tags_json = @tags,
+          custom_fields_json = @customFields,
           revision = revision + 1, updated_at = @timestamp
         WHERE id = @id AND revision = @revision`
       )
@@ -127,10 +131,29 @@ export class ProjectService {
         revision,
         techStack: JSON.stringify(input.techStack),
         tags: JSON.stringify(input.tags),
+        customFields: JSON.stringify(input.customFields),
         timestamp: this.now()
       })
     assertUpdated(result.changes, this.get(id) !== null, 'project')
     return this.require(id)
+  }
+
+  /**
+   * Permanently removes the project with all its credentials, documents, notes and links.
+   * Returns the storage keys of the project's document files so the caller can delete them.
+   */
+  delete(id: string): string[] {
+    this.require(id)
+    return this.db.transaction(() => {
+      const keys = (this.db.prepare('SELECT storage_key FROM documents WHERE project_id = ?').all(id) as { storage_key: string }[]).map(
+        (r) => r.storage_key
+      )
+      for (const table of ['credentials', 'documents', 'notes', 'links']) {
+        this.db.prepare(`DELETE FROM ${table} WHERE project_id = ?`).run(id)
+      }
+      this.db.prepare('DELETE FROM projects WHERE id = ?').run(id)
+      return keys
+    })()
   }
 
   /** Hides the project from the dashboard; its credentials, documents and notes stay intact. */

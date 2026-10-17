@@ -332,6 +332,11 @@ export class DocumentService {
     return { storageKey, size, sha256: hash.digest('hex') }
   }
 
+  /** Deletes stored files whose document rows are already gone (e.g. after a project was deleted). */
+  async discardFiles(storageKeys: string[]): Promise<void> {
+    for (const key of storageKeys) await this.discard(key)
+  }
+
   private async discard(storageKey: string): Promise<void> {
     await unlink(this.pathOf(storageKey)).catch(() => undefined)
   }

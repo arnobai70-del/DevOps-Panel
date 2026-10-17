@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { PROJECT_STATUSES, PROJECT_TYPES } from '../../../shared/constants'
 import type { Project, ProjectInput } from '../../../shared/types'
 import { errorText, splitList } from '../lib'
@@ -27,6 +27,21 @@ export function ProjectForm({
     techStack: project?.techStack.join(', ') ?? '',
     tags: project?.tags.join(', ') ?? ''
   })
+  const [fields, setFields] = useState(() =>
+    (project?.customFields ?? []).map((f) => ({ key: crypto.randomUUID(), label: f.label, value: f.value }))
+  )
+  // Names already used on other projects, offered as suggestions so the same field is spelled the same way.
+  const [knownLabels, setKnownLabels] = useState<string[]>([])
+  useEffect(() => {
+    window.vault.projects.list({ includeArchived: true }).then(
+      (all) => setKnownLabels([...new Set(all.flatMap((p) => p.customFields.map((f) => f.label)))].sort()),
+      () => undefined
+    )
+  }, [])
+  const setField = (key: string, part: 'label' | 'value', value: string): void =>
+    setFields((list) => list.map((f) => (f.key === key ? { ...f, [part]: value } : f)))
+  const addField = (): void => setFields((list) => [...list, { key: crypto.randomUUID(), label: '', value: '' }])
+  const removeField = (key: string): void => setFields((list) => list.filter((f) => f.key !== key))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -42,7 +57,10 @@ export function ProjectForm({
       type: (form.type || null) as ProjectInput['type'],
       status: form.status as ProjectInput['status'],
       techStack: splitList(form.techStack),
-      tags: splitList(form.tags)
+      tags: splitList(form.tags),
+      customFields: fields
+        .filter((f) => f.label.trim() || f.value.trim())
+        .map(({ label, value }) => ({ label, value }))
     }
     try {
       onSaved(
@@ -130,6 +148,42 @@ export function ProjectForm({
             <input value={form.tags} onChange={set('tags')} />
           </label>
         </div>
+        <fieldset className="extras">
+          <legend>Custom fields</legend>
+          {fields.length === 0 && (
+            <p className="hint">Add any detail this form does not have, e.g. Client phone, cPanel username, Renewal date.</p>
+          )}
+          {fields.map((f, i) => (
+            <div className="input-row" key={f.key}>
+              <input
+                aria-label={`Field ${i + 1} name`}
+                placeholder="Field name"
+                maxLength={100}
+                list="custom-field-names"
+                value={f.label}
+                onChange={(e) => setField(f.key, 'label', e.target.value)}
+              />
+              <input
+                aria-label={`Field ${i + 1} value`}
+                placeholder="Value"
+                maxLength={2000}
+                value={f.value}
+                onChange={(e) => setField(f.key, 'value', e.target.value)}
+              />
+              <button type="button" aria-label={`Remove field ${i + 1}`} onClick={() => removeField(f.key)}>
+                Remove
+              </button>
+            </div>
+          ))}
+          <datalist id="custom-field-names">
+            {knownLabels.map((l) => (
+              <option key={l} value={l} />
+            ))}
+          </datalist>
+          <button type="button" onClick={addField} disabled={fields.length >= 50}>
+            + Add field
+          </button>
+        </fieldset>
         <p className="hint">Passwords and API keys go in Credentials, not here.</p>
         {error && <div className="error-banner">{error}</div>}
         <div className="actions">

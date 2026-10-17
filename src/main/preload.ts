@@ -19,7 +19,8 @@ const api: VaultAPI = {
     create: (input) => invoke('projects:create', input),
     update: (update) => invoke('projects:update', update),
     archive: (id) => invoke('projects:archive', id),
-    restore: (id) => invoke('projects:restore', id)
+    restore: (id) => invoke('projects:restore', id),
+    delete: (id) => invoke('projects:delete', id)
   },
   credentials: {
     list: (projectId) => invoke('credentials:list', projectId),

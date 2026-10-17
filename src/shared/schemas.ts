@@ -42,7 +42,17 @@ export const projectInputSchema = z.object({
   repositoryUrl: optionalUrl,
   developerName: optionalText(100),
   techStack: tagList,
-  tags: tagList
+  tags: tagList,
+  /** Extra details the user adds per project, shown in the order given. Not for secrets. */
+  customFields: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1, 'Field name is required').max(100),
+        value: z.string().trim().max(2000).default('')
+      })
+    )
+    .max(50)
+    .default([])
 })
 
 export const projectListQuerySchema = z.object({

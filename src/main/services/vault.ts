@@ -35,6 +35,12 @@ export class Vault {
     return new Vault(dataDir, openDatabase(join(dataDir, 'vault.sqlite')), encryptor)
   }
 
+  /** Deletes a project and everything in it, including its document files. */
+  async deleteProject(id: string): Promise<void> {
+    const storageKeys = this.projects.delete(id)
+    await this.documents.discardFiles(storageKeys)
+  }
+
   get database(): Db {
     return this.db
   }
