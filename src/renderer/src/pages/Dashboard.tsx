@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { BackupStatus, Project } from '../../../shared/types'
+import { SignInBanner } from '../components/GoogleSync'
 import { ProjectCard } from '../components/ProjectCard'
 import { ProjectForm } from '../components/ProjectForm'
 import { errorText } from '../lib'
@@ -79,6 +80,7 @@ export function Dashboard({
           + Add Project
         </button>
       </header>
+      <SignInBanner />
 
       {teamProblem && <div className="error-banner">{teamProblem}</div>}
       {!teamProblem && error && <div className="error-banner">{error}</div>}

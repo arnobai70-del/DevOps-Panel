@@ -72,7 +72,7 @@ export function Settings(): React.JSX.Element {
           )}
         </section>
       )}
-      {team && (team.role === 'personal' || team.role === 'google') && <AccountPanel status={team} onChange={loadTeam} />}
+      {team && team.role !== 'host' && team.role !== 'client' && <AccountPanel status={team} onChange={loadTeam} />}
       {/* Office-network and shared-folder teams set up with earlier versions keep their controls. */}
       {team && team.role !== 'personal' && team.role !== 'google' && (
         <TeamPanel onRoleChange={() => void window.vault.app.info().then(setInfo)} />

@@ -1,7 +1,7 @@
 {
   "name": "agency-project-vault",
   "productName": "Agency Project Vault",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Offline-first desktop vault for agency projects, credentials, documents and notes.",
   "author": "Agency Project Vault developers",
   "main": "out/main/index.js",
