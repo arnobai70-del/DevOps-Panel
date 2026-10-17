@@ -35,6 +35,10 @@ export class Vault {
     return new Vault(dataDir, openDatabase(join(dataDir, 'vault.sqlite')), encryptor)
   }
 
+  get database(): Db {
+    return this.db
+  }
+
   close(): void {
     this.db.close()
   }

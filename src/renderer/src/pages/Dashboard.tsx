@@ -1,15 +1,36 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Project } from '../../../shared/types'
+import type { BackupStatus, Project } from '../../../shared/types'
 import { ProjectCard } from '../components/ProjectCard'
 import { ProjectForm } from '../components/ProjectForm'
 import { errorText } from '../lib'
 
-export function Dashboard({ onOpen }: { onOpen: (projectId: string) => void }): React.JSX.Element {
+const REMIND_AFTER_DAYS = 7
+
+function backupReminder(status: BackupStatus | null): string | null {
+  if (!status?.hasData) return null
+  if (!status.lastBackupAt) return 'This vault has never been backed up.'
+  const days = Math.floor((Date.now() - new Date(status.lastBackupAt).getTime()) / 86_400_000)
+  return days >= REMIND_AFTER_DAYS ? `Last backup was ${days} days ago.` : null
+}
+
+export function Dashboard({
+  onOpen,
+  onSettings
+}: {
+  onOpen: (projectId: string) => void
+  onSettings: () => void
+}): React.JSX.Element {
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [backup, setBackup] = useState<BackupStatus | null>(null)
+
+  useEffect(() => {
+    window.vault.backups.status().then(setBackup, () => setBackup(null))
+  }, [])
+  const reminder = backupReminder(backup)
 
   const load = useCallback(async (query: string, includeArchived: boolean) => {
     try {
@@ -47,6 +68,12 @@ export function Dashboard({ onOpen }: { onOpen: (projectId: string) => void }): 
       </header>
 
       {error && <div className="error-banner">{error}</div>}
+      {reminder && (
+        <div className="notice reminder">
+          <span>{reminder} Keep an encrypted copy on another drive.</span>
+          <button onClick={onSettings}>Back up now</button>
+        </div>
+      )}
 
       {projects === null ? (
         <p className="muted">Loading…</p>

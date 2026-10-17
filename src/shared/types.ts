@@ -99,6 +99,32 @@ export interface Link {
   updatedAt: string
 }
 
+export interface BackupCounts {
+  projects: number
+  credentials: number
+  documents: number
+  notes: number
+  links: number
+}
+
+export interface BackupStatus {
+  lastBackupAt: string | null
+  hasData: boolean
+}
+
+export interface BackupResult {
+  path: string
+  bytes: number
+  createdAt: string
+  counts: BackupCounts
+}
+
+export interface RestoreResult {
+  backupCreatedAt: string
+  counts: BackupCounts
+  safetyCopyDir: string
+}
+
 export interface AppInfo {
   version: string
   dataDir: string
@@ -151,6 +177,13 @@ export interface VaultAPI {
     list(projectId: string): Promise<Link[]>
     save(input: LinkSave): Promise<Link>
     remove(id: string): Promise<void>
+  }
+  backups: {
+    status(): Promise<BackupStatus>
+    /** Asks where to save, then writes an encrypted .apv backup; null when cancelled. */
+    create(passphrase: string): Promise<BackupResult | null>
+    /** Asks for an .apv file, verifies it, then replaces the current vault; null when cancelled. */
+    restore(passphrase: string): Promise<RestoreResult | null>
   }
 }
 

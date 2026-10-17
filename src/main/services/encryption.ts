@@ -59,16 +59,22 @@ export class Encryptor {
       return Encryptor.forKey(key, parsed.keyVersion, parsed.protection)
     }
     const key = randomBytes(32)
-    const body: KeyFile = {
-      format: 1,
-      protection: protector.name,
-      keyVersion: 1,
-      key: protector.protect(key).toString('base64')
-    }
+    Encryptor.writeKeyFile(dataDir, key, 1, protector)
+    return Encryptor.forKey(key, 1, protector.name)
+  }
+
+  /** Raw key copy, only for writing into a passphrase-encrypted backup. */
+  exportKey(): Buffer {
+    return Buffer.from(this.key)
+  }
+
+  /** Writes a key restored from a backup, re-protected for this machine. */
+  static writeKeyFile(dataDir: string, key: Buffer, keyVersion: number, protector: KeyProtector): void {
+    const file = join(dataDir, KEY_FILE)
+    const body: KeyFile = { format: 1, protection: protector.name, keyVersion, key: protector.protect(key).toString('base64') }
     const tmp = `${file}.tmp`
     writeFileSync(tmp, JSON.stringify(body), { mode: 0o600 })
     renameSync(tmp, file)
-    return Encryptor.forKey(key, 1, protector.name)
   }
 
   encrypt(plaintext: string, aad: string): Buffer {
