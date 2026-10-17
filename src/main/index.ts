@@ -1,6 +1,7 @@
-import { app, BrowserWindow, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, safeStorage, shell, type IpcMainInvokeEvent } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { unprotectedKeys, type KeyProtector } from './services/encryption'
 import { Vault } from './services/vault'
 import { registerIpcHandlers } from './ipc/handlers'
 
@@ -23,6 +24,16 @@ function isAppUrl(rawUrl: string): boolean {
 
 function isTrustedSender(event: IpcMainInvokeEvent): boolean {
   return !!event.senderFrame && isAppUrl(event.senderFrame.url)
+}
+
+/** Windows DPAPI (via safeStorage) protects the vault key; falls back to an unprotected key where the OS offers none. */
+function keyProtector(): KeyProtector {
+  if (!safeStorage.isEncryptionAvailable()) return unprotectedKeys
+  return {
+    name: 'safeStorage',
+    protect: (key) => safeStorage.encryptString(key.toString('base64')),
+    unprotect: (blob) => Buffer.from(safeStorage.decryptString(blob), 'base64')
+  }
 }
 
 function createWindow(): void {
@@ -74,11 +85,19 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(() => {
-    vault = Vault.open(app.getPath('userData'))
+    vault = Vault.open(app.getPath('userData'), keyProtector())
     const opened = vault
+    opened.documents.cleanupOrphans().catch((err: unknown) => {
+      console.error('[startup] orphan cleanup failed:', err instanceof Error ? err.message : err)
+    })
     registerIpcHandlers(
       opened,
-      () => ({ version: app.getVersion(), dataDir: opened.dataDir, mode: 'personal' }),
+      () => ({
+        version: app.getVersion(),
+        dataDir: opened.dataDir,
+        mode: 'personal',
+        keyProtection: opened.encryptor.protection
+      }),
       isTrustedSender
     )
     createWindow()

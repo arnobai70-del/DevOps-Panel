@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { Db } from '../db/database'
-import { projectInputSchema, projectListQuerySchema } from '../../shared/schemas'
-import type { Project, ProjectInput, ProjectListQuery } from '../../shared/types'
+import { projectInputSchema, projectListQuerySchema, projectUpdateSchema } from '../../shared/schemas'
+import type { Project, ProjectInput, ProjectListQuery, ProjectUpdate } from '../../shared/types'
+import { assertUpdated, NotFoundError } from './errors'
 
 interface ProjectRow {
   id: string
@@ -76,6 +77,12 @@ export class ProjectService {
     return row ? toProject(row) : null
   }
 
+  require(id: string): Project {
+    const project = this.get(id)
+    if (!project) throw new NotFoundError('project')
+    return project
+  }
+
   create(rawInput: ProjectInput): Project {
     const input = projectInputSchema.parse(rawInput)
     const id = randomUUID()
@@ -100,5 +107,48 @@ export class ProjectService {
         timestamp
       })
     return this.get(id)!
+  }
+
+  update(raw: ProjectUpdate): Project {
+    const { id, revision, input } = projectUpdateSchema.parse(raw)
+    const result = this.db
+      .prepare(
+        `UPDATE projects SET
+          name = @name, description = @description, type = @type, status = @status,
+          website_url = @websiteUrl, admin_url = @adminUrl, hosting_name = @hostingName,
+          domain_provider = @domainProvider, repository_url = @repositoryUrl,
+          developer_name = @developerName, tech_stack_json = @techStack, tags_json = @tags,
+          revision = revision + 1, updated_at = @timestamp
+        WHERE id = @id AND revision = @revision`
+      )
+      .run({
+        ...input,
+        id,
+        revision,
+        techStack: JSON.stringify(input.techStack),
+        tags: JSON.stringify(input.tags),
+        timestamp: this.now()
+      })
+    assertUpdated(result.changes, this.get(id) !== null, 'project')
+    return this.require(id)
+  }
+
+  /** Hides the project from the dashboard; its credentials, documents and notes stay intact. */
+  archive(id: string): Project {
+    return this.setArchived(id, this.now())
+  }
+
+  restore(id: string): Project {
+    return this.setArchived(id, null)
+  }
+
+  private setArchived(id: string, archivedAt: string | null): Project {
+    this.require(id)
+    this.db
+      .prepare(
+        'UPDATE projects SET archived_at = @archivedAt, revision = revision + 1, updated_at = @timestamp WHERE id = @id'
+      )
+      .run({ id, archivedAt, timestamp: this.now() })
+    return this.require(id)
   }
 }

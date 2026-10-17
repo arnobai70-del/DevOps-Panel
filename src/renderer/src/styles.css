@@ -83,8 +83,7 @@ button:disabled { opacity: 0.6; cursor: default; }
   background: var(--surface); border-radius: 12px; padding: 24px; width: min(640px, 100%); max-height: 90vh; overflow: auto;
   display: flex; flex-direction: column; gap: 12px;
 }
-.modal h2 { margin: 0 0 4px; }
-.modal label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; flex: 1; }
+.modal h2 { margin: 0; }
 .row { display: flex; gap: 12px; }
 .hint { margin: 0; font-size: 13px; color: var(--muted); }
 .actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -94,3 +93,60 @@ button:disabled { opacity: 0.6; cursor: default; }
 .facts { display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; margin: 0; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; }
+
+.ghost { border: 0; background: transparent; }
+button.danger { color: var(--danger); }
+.toggle { display: flex; align-items: center; gap: 6px; font-size: 14px; white-space: nowrap; }
+.toggle input { width: auto; }
+.card.clickable { cursor: pointer; }
+.card.clickable:hover, .card.clickable:focus-visible { border-color: var(--accent); outline: none; }
+.card.archived { opacity: 0.65; }
+.page-header .badge { margin-right: auto; }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+.tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 10px 14px; }
+.tab.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.section-head p { margin: 0; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.panel-head h2 { margin: 0; }
+.list { display: flex; flex-direction: column; gap: 12px; }
+.empty.small { padding: 40px 0; color: var(--muted); }
+.notice { background: var(--bg); border: 1px solid var(--border); padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; }
+.pre { white-space: pre-wrap; margin: 0; }
+.small-text { font-size: 12px; }
+
+.secret-row { display: grid; grid-template-columns: 150px 1fr auto auto auto; align-items: center; gap: 8px; }
+.secret-label { color: var(--muted); font-size: 14px; }
+.secret-value { font-family: Consolas, ui-monospace, monospace; word-break: break-all; user-select: text; }
+.secret-row button { padding: 4px 10px; font-size: 13px; }
+
+.form { display: flex; flex-direction: column; gap: 12px; }
+.form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; flex: 1; }
+.form.compact { margin-top: 12px; gap: 8px; }
+.input-row { display: flex; gap: 8px; align-items: center; }
+.input-row input { flex: 1; }
+.extras { border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.extras legend { font-size: 14px; padding: 0 4px; }
+.extras > button { align-self: flex-start; }
+.file-pick { display: flex; align-items: center; gap: 12px; }
+
+.modal.wide { width: min(960px, 100%); }
+.modal-head { display: flex; justify-content: space-between; align-items: center; }
+.preview-image { max-width: 100%; max-height: 60vh; object-fit: contain; align-self: center; }
+.preview-text { max-height: 60vh; overflow: auto; background: var(--bg); padding: 12px; border-radius: 8px; white-space: pre-wrap; }
+
+.table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.table th, .table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; font-size: 14px; }
+.table th { color: var(--muted); font-weight: 500; }
+.table td.actions { display: table-cell; text-align: right; white-space: nowrap; }
+.table td.actions button { padding: 4px 10px; font-size: 13px; margin-left: 6px; }
+
+.two-col { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; align-items: start; }
+.two-col .panel { max-width: none; }
+.note { border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.note-title { font-weight: 600; }
+.note-foot { display: flex; justify-content: space-between; align-items: center; }
+.links { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.links li { display: flex; justify-content: space-between; align-items: start; gap: 8px; }

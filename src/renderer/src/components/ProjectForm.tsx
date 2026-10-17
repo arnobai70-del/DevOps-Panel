@@ -1,32 +1,31 @@
 import { useState, type FormEvent } from 'react'
 import { PROJECT_STATUSES, PROJECT_TYPES } from '../../../shared/constants'
-import type { ProjectInput } from '../../../shared/types'
-
-const splitList = (value: string): string[] =>
-  value
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
+import type { Project, ProjectInput } from '../../../shared/types'
+import { errorText, splitList } from '../lib'
+import { Modal } from './Modal'
 
 export function ProjectForm({
+  project,
   onCancel,
   onSaved
 }: {
+  project?: Project
   onCancel: () => void
-  onSaved: () => void
+  onSaved: (project: Project) => void
 }): React.JSX.Element {
   const [form, setForm] = useState({
-    name: '',
-    description: '',
-    type: '',
-    status: 'active',
-    websiteUrl: '',
-    adminUrl: '',
-    hostingName: '',
-    domainProvider: '',
-    repositoryUrl: '',
-    developerName: '',
-    techStack: ''
+    name: project?.name ?? '',
+    description: project?.description ?? '',
+    type: project?.type ?? '',
+    status: project?.status ?? 'active',
+    websiteUrl: project?.websiteUrl ?? '',
+    adminUrl: project?.adminUrl ?? '',
+    hostingName: project?.hostingName ?? '',
+    domainProvider: project?.domainProvider ?? '',
+    repositoryUrl: project?.repositoryUrl ?? '',
+    developerName: project?.developerName ?? '',
+    techStack: project?.techStack.join(', ') ?? '',
+    tags: project?.tags.join(', ') ?? ''
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -42,21 +41,24 @@ export function ProjectForm({
       ...form,
       type: (form.type || null) as ProjectInput['type'],
       status: form.status as ProjectInput['status'],
-      techStack: splitList(form.techStack)
+      techStack: splitList(form.techStack),
+      tags: splitList(form.tags)
     }
     try {
-      await window.vault.projects.create(input)
-      onSaved()
+      onSaved(
+        project
+          ? await window.vault.projects.update({ id: project.id, revision: project.revision, input })
+          : await window.vault.projects.create(input)
+      )
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(errorText(err))
       setSaving(false)
     }
   }
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Add project">
-      <form className="modal" onSubmit={(e) => void submit(e)}>
-        <h2>Add Project</h2>
+    <Modal title={project ? 'Edit Project' : 'Add Project'} onClose={onCancel}>
+      <form className="form" onSubmit={(e) => void submit(e)}>
         <label>
           Project name *
           <input autoFocus required maxLength={150} value={form.name} onChange={set('name')} />
@@ -118,10 +120,16 @@ export function ProjectForm({
             <input value={form.developerName} onChange={set('developerName')} />
           </label>
         </div>
-        <label>
-          Tech stack (comma separated)
-          <input placeholder="Laravel, React" value={form.techStack} onChange={set('techStack')} />
-        </label>
+        <div className="row">
+          <label>
+            Tech stack (comma separated)
+            <input placeholder="Laravel, React" value={form.techStack} onChange={set('techStack')} />
+          </label>
+          <label>
+            Tags (comma separated)
+            <input value={form.tags} onChange={set('tags')} />
+          </label>
+        </div>
         <p className="hint">Passwords and API keys go in Credentials, not here.</p>
         {error && <div className="error-banner">{error}</div>}
         <div className="actions">
@@ -133,6 +141,6 @@ export function ProjectForm({
           </button>
         </div>
       </form>
-    </div>
+    </Modal>
   )
 }
