@@ -23,6 +23,7 @@ describe('ProjectService', () => {
       websiteUrl: null,
       techStack: [],
       tags: [],
+      customFields: [],
       revision: 1,
       archivedAt: null
     })
@@ -41,6 +42,28 @@ describe('ProjectService', () => {
     })
     expect(projects.get(p.id)).toEqual(p)
     expect(p.techStack).toEqual(['Laravel', 'React'])
+  })
+
+  it('keeps custom fields in order, edits them, and finds projects by them', () => {
+    const p = projects.create({
+      name: 'Shop',
+      customFields: [
+        { label: ' Client phone ', value: ' 01711-000000 ' },
+        { label: 'নবায়নের তারিখ', value: '2027-01-15' }
+      ]
+    })
+    expect(p.customFields).toEqual([
+      { label: 'Client phone', value: '01711-000000' },
+      { label: 'নবায়নের তারিখ', value: '2027-01-15' }
+    ])
+    expect(projects.list({ search: '01711' }).map((x) => x.name)).toEqual(['Shop'])
+    expect(projects.list({ search: 'নবায়ন' }).map((x) => x.name)).toEqual(['Shop'])
+    const updated = projects.update({ id: p.id, revision: p.revision, input: { name: 'Shop', customFields: [{ label: 'Renewal', value: '' }] } })
+    expect(updated.customFields).toEqual([{ label: 'Renewal', value: '' }])
+    expect(() => projects.create({ name: 'A', customFields: [{ label: '  ', value: 'x' }] })).toThrow(/Field name is required/)
+    expect(() =>
+      projects.create({ name: 'A', customFields: Array.from({ length: 51 }, (_, i) => ({ label: `f${i}`, value: '' })) })
+    ).toThrow()
   })
 
   it('rejects an empty name, overly long name and unsafe URLs', () => {

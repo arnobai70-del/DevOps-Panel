@@ -30,10 +30,16 @@ export interface Project {
   developerName: string | null
   techStack: string[]
   tags: string[]
+  customFields: ProjectCustomField[]
   revision: number
   createdAt: string
   updatedAt: string
   archivedAt: string | null
+}
+
+export interface ProjectCustomField {
+  label: string
+  value: string
 }
 
 /** A credential as the renderer sees it: which fields are set, never their values. */

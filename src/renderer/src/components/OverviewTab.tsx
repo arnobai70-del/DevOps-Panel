@@ -4,6 +4,17 @@ import { errorText, formatDate } from '../lib'
 import { ExternalLink } from './ExternalLink'
 import { ProjectForm } from './ProjectForm'
 
+/** Shows a custom field; a value that is a plain web link opens in the browser. */
+function FieldRow({ label, value }: { label: string; value: string }): React.JSX.Element {
+  const isLink = /^https?:\/\/\S+$/i.test(value)
+  return (
+    <>
+      <dt>{label}</dt>
+      <dd>{value ? isLink ? <ExternalLink url={value} /> : value : '—'}</dd>
+    </>
+  )
+}
+
 export function OverviewTab({
   project,
   onChanged
@@ -57,6 +68,9 @@ export function OverviewTab({
         <dd>{project.techStack.join(', ') || '—'}</dd>
         <dt>Tags</dt>
         <dd>{project.tags.join(', ') || '—'}</dd>
+        {project.customFields.map((f, i) => (
+          <FieldRow key={i} label={f.label} value={f.value} />
+        ))}
         <dt>Created</dt>
         <dd>{formatDate(project.createdAt)}</dd>
         <dt>Updated</dt>
