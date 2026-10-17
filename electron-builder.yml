@@ -1,0 +1,24 @@
+appId: com.agency.projectvault
+productName: Agency Project Vault
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+# better-sqlite3 ships Node-API prebuilds that work in Electron as-is.
+npmRebuild: false
+asarUnpack:
+  - node_modules/better-sqlite3/**
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: AgencyProjectVault-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  # Vault data lives in %APPDATA%\AgencyProjectVault and is never removed on uninstall.
+  deleteAppDataOnUninstall: false
