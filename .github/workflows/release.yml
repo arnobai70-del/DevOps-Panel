@@ -1,28 +1,59 @@
 name: Release
 
-# Push a tag like v0.2.0 to build the Windows installer and attach it to a GitHub Release.
+# Publishes a GitHub Release with the Windows installer for the version in package.json
+# (v<version>) whenever main moves to a version that has no release yet. Bump "version"
+# in package.json to publish the next one. Pushing a tag like v0.2.0 also works.
 on:
   push:
+    branches: [main]
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run dist:win -- --publish never
-      - name: Create GitHub Release
+      - name: Decide the release tag
+        id: tag
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.exe --title "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v$(node -p "require('./package.json').version")"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.tag.outputs.skip != 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.tag.outputs.skip != 'true'
+        run: npm ci
+      - if: steps.tag.outputs.skip != 'true'
+        run: npm run typecheck
+      - if: steps.tag.outputs.skip != 'true'
+        run: npm test
+      - if: steps.tag.outputs.skip != 'true'
+        run: npm run dist:win -- --publish never
+      - name: Create GitHub Release
+        if: steps.tag.outputs.skip != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: gh release create "$TAG" dist/*.exe --target "$GITHUB_SHA" --title "Agency Project Vault $TAG" --generate-notes
